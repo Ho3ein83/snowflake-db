@@ -3,7 +3,36 @@
 ![Project Status: Incomplete](https://img.shields.io/badge/status-incomplete-red)
 ![Coverage](https://img.shields.io/badge/covergage-50%25-blue)
 
-
+<!-- TOC -->
+* [SnowflakeDB - Introduction](#snowflakedb---introduction)
+  * [How to install?](#how-to-install)
+    * [1. Open the project](#1-open-the-project)
+    * [2. Install dependencies](#2-install-dependencies)
+    * [3. Run the program](#3-run-the-program)
+    * [Change the configuration (optional):](#change-the-configuration-optional)
+    * [Use the program as module](#use-the-program-as-module)
+  * [Benchmark (for database with only 1 entry)](#benchmark-for-database-with-only-1-entry)
+    * [Data manipulation:](#data-manipulation)
+    * [Performance](#performance)
+  * [How does it work?](#how-does-it-work)
+  * [Why should I use this one?](#why-should-i-use-this-one)
+  * [How to use command line (TCP shell)?](#how-to-use-command-line-tcp-shell)
+    * [1. Set up your access keys](#1-set-up-your-access-keys)
+    * [2. Enter your shell](#2-enter-your-shell)
+    * [3. Enter your access key](#3-enter-your-access-key)
+    * [4. Done!](#4-done)
+  * [Configuration](#configuration)
+  * [Learn more](#learn-more)
+    * [Database files (MEIDs)](#database-files-meids)
+    * [Key files](#key-files)
+    * [TCP shell](#tcp-shell)
+    * [Attributes](#attributes)
+    * [Internal commands](#internal-commands)
+    * [Database commands](#database-commands)
+  * [Contribution](#contribution)
+  * [Copyright](#copyright)
+  * [License](#license)
+<!-- TOC -->
 
 # SnowflakeDB - Introduction
 SnowflakeDB is an advanced in-memory database system inspired by Redis.
@@ -14,17 +43,26 @@ At this moment, this project is not final and needs more time to be ready. If yo
 
 ### 1. Open the project
 Run the following command or download the repository as zip:<br/>
+```bash
 `git clone https://github.com/Ho3ein83/snowflake-db`
+```
 Open the project directory:<br/>
-`cd snowflake-db`
+```bash
+cd snowflake-db
+```
 
 ### 2. Install dependencies
 To install the project dependencies, run the following command inside `snowflake-db` directory:<br/>
-`npm isntall`
+```bash
+npm isntall
+```
 
 ### 3. Run the program
 After installing required dependencies, run the project using the following command:<br/>
-`node index.js`<br/>
+```bash
+node index.js
+```
+<br/>
 Now you can access the database using TCP shell or use shared method to use it inside your project.
 
 ### Change the configuration (optional):
@@ -169,7 +207,14 @@ To limit the maximum allowed connections, set the `max_connections` property to 
 
 ### 2. Enter your shell
 To open the TCP shell, use the netcat command to connect to the configured TCP port and host and start the session:<br/>
-`nc localhost 6401` or `nc host.com 6401`<br/>
+```bash
+nc localhost 6401
+```
+or:
+```bash
+nc host.com 6401
+```
+<br/>
 
 ### 3. Enter your access key
 After opening the connection, enter one of your access keys and press Enter.<br/>
