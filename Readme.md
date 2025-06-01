@@ -44,7 +44,7 @@ At this moment, this project is not final and needs more time to be ready. If yo
 ### 1. Open the project
 Run the following command or download the repository as zip:<br/>
 ```bash
-`git clone https://github.com/Ho3ein83/snowflake-db`
+git clone https://github.com/Ho3ein83/snowflake-db
 ```
 Open the project directory:<br/>
 ```bash
