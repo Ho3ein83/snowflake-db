@@ -1,0 +1,14 @@
+{
+  "name": "Snowflake DB",
+  "version": "1.0.0",
+  "version_code": 1,
+  "meid_version": 1,
+  "signature": "Qb4SD6xF",
+  "access_keys": {
+    "": {
+      "alias": "SnowflakeDB",
+      "permissions": ["*"],
+      "max_connections": -1
+    }
+  }
+}

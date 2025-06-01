@@ -1,0 +1,157 @@
+# Log options
+logs:
+
+  # Enabling the logs, useful for debugging, can lead to information leaks if you're not careful.
+  enabled: true
+
+  # Whether to show current time before log text.
+  show_time: false
+
+  # Time format if tou enabled 'show_time'.
+  time_format: "Y-m-d H:i:s"
+
+  # Whether to print ANSI colors or not.
+  # Disable this option in production, since you don't need to see any logs or you want to keep them in a text file.
+  use_colors: true
+
+  # Whether to keep every connections information to CLI
+  save_cli_connections: true
+
+  # Whether to keep authorization attempts to CLI
+  save_cli_logins: true
+
+# Server configuration
+server:
+
+  # Server port, this port will be used for both websocket and HTTP web server.
+  port: 6401
+
+  # TCP port for CLI
+  # Set it to 0 to disable CLI server
+  cli_port: 6402
+
+  # Maximum login attempts for CLI.
+  # Set it to 0 to disable brute-force protection for CLI.
+  max_cli_login_attempt: 2
+
+  # Lockdown type for CLI authentication.
+  # After exceeding the login attempts, the CLI will be locked down.
+  # Set it to "ip" to block that IP for a certain amount of time.
+  # Set it to "token" to block that token for a certain amount of time. This can be helpful against brute-force attacks
+  # as the attacker can change his IP.
+  # Note: Lockdown doesn't affect existing sessions, but as soon as they leave the room, they can't log in again
+  # until the cool-down period completes.
+  cli_lockdown: "ip"
+
+  # Cooldown period (in seconds)
+  # After a few unsuccessful login attempts, the lockdown starts and after a certain amount of time it'll disable the
+  # lockdown. Also you can disable it manually by removing '.lockdown' file in the current directory.
+  # Minimum value: 5
+  cli_cooldown: 60
+
+  # Set how long (in milliseconds) a client can stay connected to CLI without authentication.
+  # Minimum value: 1000
+  cli_authentication_timeout: 5000
+
+  # The maximum size allowed for CLI input.
+  # You can limit the input size of CLI for safety reasons and more reliability.
+  # Remember that if you limit the input size you may not be able to add large data in memory.
+  # For example by sending the command "set key1 value1", the input size will be 15 characters
+  # or 15 bytes.
+  # The correct format is "XY" where X is the expected size without fraction (e.g: 12, 10) and Y is the
+  # size unit (e.g: "MB", "B", "KB") which is case-insensitive.
+  # For no limit, set it to 0
+  cli_input_size: 0
+
+  # Whether to handle HTTP request or leave them as they are
+  # If you disable this option, internal GUI tools won't work
+  http_server: true
+
+  # Enabling the home page for GUI.
+  # If you enable this, you can access the graphical interface for database management.
+  # Requires your access token to access the GUI.
+  homePage: true
+
+  # Filter allowed origins, by using the default value ".*" you will accept any origins from anyone.
+  # Remember this origin is only for management applications and not the TCP connections for CLI.
+  # To filter the origin, use a regex for allowed origins, here are a few examples:
+  # 1) "https?:\/\/example\.com" - only accepts 'example.com' domain with both 'http' and 'https' protocols.
+  # 2) "https:\/\/example\.com" - only accepts 'example.com' domain with only https' protocol.
+  # 3) "https?:\/\/(example|domain)\.com" - only accepts 'example.com' and 'domain.com' domains.
+  # 4) "\.com$" - only accepts domains that ends with '.com'.
+  # 5) ".*" - accepts every domain.
+  allowedOrigins: ".*"
+
+# Directories and paths
+dir:
+
+  # Database directory path, it can be either a relative path to current directory or an absolute path to anywhere.
+  # If you want to locate the database files into another path, you can change it to full target path.
+  database: "./db"
+
+  # Log files directory path, it can be either a relative path to current directory or an absolute path to anywhere.
+  # If you want to locate the log files into another path, you can change it to another path.
+  logs: "logs"
+
+# Configuration for persistence options.
+# Instead of continuously writing data to database files, changes are initially recorded in some backup files.
+# During initialization, all backup files are parsed to update the database files.
+# Backup operations run in the background, ensuring they do not impact application performance.
+persistent:
+
+  # If you don't need your data to be permanent, you can disable this option.
+  # Disabling this option will store data in memory only,
+  # which means all data will be lost once the application is terminated.
+  # Use this for temporary data storage needs, where data permanence is not required.
+  enabled: true
+
+  # Define the maximum size for each backup file.
+  # When a backup file reaches this size limit, a new backup file will be created,
+  # and new data will be written to the new file.
+  # Set the limit to 0 to allow backups of unlimited size, though this is not recommended.
+  # Unlimited file sizes may lead to performance issues as the application runs for long periods.
+  backup_size_limit: 10MB
+
+# MEID (Mapped Excluded Independent Database)
+meids:
+
+  # Whether to encrypt database files.
+  encrypt: false
+
+  # Database files (keys, meids and backup files) permission.
+  # Use any Unix permission (chmod) as string, e.g: "644", "777".
+  # Set it to null to leave the permission as default.
+  permission: "777"
+
+  # Your database shares the data into multiple files (known as MEIDs) to prevent data corruption and large file size.
+  # These files are totally separated, by deleting (or corrupting) a file only data on that file will be lost.
+  # More MEIDs means there will be more databases to handle, so if you need a small database one MEID would be enough.
+  # Set to 0 or less to use all the MEIDs available inside the database directory.
+  count: 1
+
+  # The allowed size of each entry in database files (MEID).
+  # By limiting the allowed size, you limit the maximum size for each entry in each MEID file.
+  # If the limit exceeds, it won't add that entry to the database.
+  # The correct format is "XY" where X is the expected size (e.g: 12, 10.5) and Y is the
+  # size unit (e.g: "MB", "B", "KB") which is case-insensitive.
+  # Set it to any value less than 0 for no limit.
+  size: 0
+
+# Memory management configuration
+memory:
+
+  # Whether to monitor memory usage or not, you can manage memory by enabling it.
+  # If you disable it (by setting it to false or no), options specified with [MONITOR] keyword will be ignored.
+  monitor: true
+
+  # [MONITOR]
+  # Maximum allowed size memory can reach, if the limit exceeds, it won't add any entry to the memory
+  # The correct format is "XY" where X is the expected size (e.g: 12, 10.5) and Y is the
+  # size unit (e.g: "MB", "B", "KB") which is case-insensitive.
+  # If you add no unit, it would be considered as B (bytes).
+  # Set it to any value less than 0 for no limit.
+  max_size: 10MB
+
+  # Whether to use mega-binary mode or not.
+  # In Mega-binary mode, 1KB equals to 1024 bytes, but in standard mode it equals to 1000 bytes.
+  mb_mode: false
