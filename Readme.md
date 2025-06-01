@@ -12,7 +12,7 @@
     * [Change the configuration (optional):](#change-the-configuration-optional)
     * [Use the program as module](#use-the-program-as-module)
   * [Benchmark (for database with only 1 entry)](#benchmark-for-database-with-only-1-entry)
-    * [Data manipulation:](#data-manipulation)
+    * [Data manipulation](#data-manipulation)
     * [Performance](#performance)
   * [How does it work?](#how-does-it-work)
   * [Why should I use this one?](#why-should-i-use-this-one)
@@ -44,7 +44,7 @@ At this moment, this project is not final and needs more time to be ready. If yo
 ### 1. Open the project
 Run the following command or download the repository as zip:<br/>
 ```bash
-`git clone https://github.com/Ho3ein83/snowflake-db`
+git clone https://github.com/Ho3ein83/snowflake-db
 ```
 Open the project directory:<br/>
 ```bash
@@ -54,7 +54,7 @@ cd snowflake-db
 ### 2. Install dependencies
 To install the project dependencies, run the following command inside `snowflake-db` directory:<br/>
 ```bash
-npm isntall
+npm install
 ```
 
 ### 3. Run the program
@@ -103,9 +103,9 @@ In our case, the project was located inside the snowflake-db directory, so the m
 ## Benchmark (for database with only 1 entry)
 
 This benchmark was done using two methods of database access: the first was a TCP shell, which allows you to manage the database via a TCP connection; the second used shared memory by integrating this project directly into your own.<br/>
-Both were calculated using the same data and measurement methods.
+Both were calculated using the same data and measurement methods on the same device.
 
-### Data manipulation:
+### Data manipulation
 |   Method    |   Set    |  Update  |  Delete  |   Get    | Sanitize (key) | Sanitize (value) |
 |:-----------:|:--------:|:--------:|:--------:|:--------:|:--------------:|:----------------:|
 |  TCP Shell  | 1.561 ms | 0.265 ms | 0.447 ms | 0.559 ms |    0.161 ms    |     0.119 ms     |
@@ -128,34 +128,34 @@ TCP shell commands takes longer time to execute, because there are a few extra s
 ## How does it work?
 
 - **Database files**:
-Each database is stored in a `.sfd` file, which contains the actual data in binary format. These database files are referred to as **MEIDs (Mapped Excluded Independent Databases)**.
-MEIDs are independent — if one becomes corrupted or gets lost, the other database parts remain usable, so you won't lose everything!
+  Each database is stored in a `.sfd` file, which contains the actual data in binary format. These database files are referred to as **MEIDs (Mapped Excluded Independent Databases)**.
+  MEIDs are independent — if one becomes corrupted or gets lost, the other database parts remain usable, so you won't lose everything!
 
 - **Database keys**:
-Each database file has a corresponding key file linked to it. The key file uses the `.sfk` format and shares the same index as the database file. For example, if a database file is named `meid-0.sfd`, the related key file will be `key-0.sfk`.<br/>
-These key files contain a list of keys, hashes, and the length of the corresponding data in the database file. They are used solely for indexing and are crucial for data recovery.<br/>
-Key files also stores as binary, which will be explained later.
+  Each database file has a corresponding key file linked to it. The key file uses the `.sfk` format and shares the same index as the database file. For example, if a database file is named `meid-0.sfd`, the related key file will be `key-0.sfk`.<br/>
+  These key files contain a list of keys, hashes, and the length of the corresponding data in the database file. They are used solely for indexing and are crucial for data recovery.<br/>
+  Key files also stores as binary, which will be explained later.
 
 - **Backup files**:
-Instead of updating each entry in the database (which can be time-consuming), SnowflakeDB tracks every change and stores it as a backup file in the `.sfb` format. These backups are later collected and merged by worker processes to persist the database. These processes run in the background and does not block the main process.<br/>
-If the application crashes while taking or restoring a backup, it won’t cause any issues, as all operations are handled in order.
+  Instead of updating each entry in the database (which can be time-consuming), SnowflakeDB tracks every change and stores it as a backup file in the `.sfb` format. These backups are later collected and merged by worker processes to persist the database. These processes run in the background and does not block the main process.<br/>
+  If the application crashes while taking or restoring a backup, it won’t cause any issues, as all operations are handled in order.
 
 - **Encode / Decode**:
-It uses msgpack for encoding and decoding data into binary, which supports various data types such as numbers, strings, booleans, objects and arrays.
+  It uses msgpack for encoding and decoding data into binary, which supports various data types such as numbers, strings, booleans, objects and arrays.
 
 - **TCP Shell**:
-SnowflakeDB provides a simple TCP shell that allows you to manage your database over a TCP connection, all you have to do is set the TCP port (or use the default) and run the following command in your terminal:<br/>
-`nc 127.0.0.0 6401` or `nc domain.com 6401`<br/>
-*Note that you might need an access token (if configured one) to access the shell.*
+  SnowflakeDB provides a simple TCP shell that allows you to manage your database over a TCP connection, all you have to do is set the TCP port (or use the default) and run the following command in your terminal:<br/>
+  `nc 127.0.0.0 6401` or `nc domain.com 6401`<br/>
+  *Note that you might need an access token (if configured one) to access the shell.*
 
 ![Snowflake shell](https://amatris.ir/cdn/images/snowflake-db-tcp-shell.png)
 
 - **Security**:
-There are several security options. For instance, you can set up one or more access tokens to authenticate the shell and run commands.
-You can also encrypt your data using your own encryption key, change the default ports to enhance database security and change the login attempts limit to prevent brute-force attacks.
+  There are several security options. For instance, you can set up one or more access tokens to authenticate the shell and run commands.
+  You can also encrypt your data using your own encryption key, change the default ports to enhance database security and change the login attempts limit to prevent brute-force attacks.
 
 - **Logs**:
-If you enable the logging option (enabled by default), you can track login attempts, connections, and other activities. It worth mentioning that you can customize logging options, which will be explained later.
+  If you enable the logging option (enabled by default), you can track login attempts, connections, and other activities. It worth mentioning that you can customize logging options, which will be explained later.
 
 ## Why should I use this one?
 There are many in-memory database and cache systems such as Redis, Memcached, and Valkey that you can use. However, in this project, simplicity is considered an important factor; therefore, there aren't many complicated data types or structures.
@@ -232,7 +232,7 @@ To change the database configuration, refer to the `configs.yaml` file, which is
 If you're interested in how this software works, read the following sections. You’re also welcome to explore the codes.
 
 ### Database files (MEIDs)
-By default, database files are located in the `snowflake-db/db` directory (this can be changed in the configuration file). These files are stored in binary format, so you can use tools like Hexdump or GHex to view their contents.
+By default, database files are located in the `snowflake-db/db` directory (this can be changed in the configuration file). These files are stored in binary format, so you can use tools like **Hexdump** or **[GHex](https://flathub.org/apps/org.gnome.GHex)** to view their contents.
 If you open a MEID (`.sfd`) file, you see something like this:
 ```
 00 01 51 62 34 53 44 36 78 46 00 00 00 00 00 00
