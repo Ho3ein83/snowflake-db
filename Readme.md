@@ -3,6 +3,8 @@
 ![Project Status: Incomplete](https://img.shields.io/badge/status-incomplete-red)
 ![Coverage](https://img.shields.io/badge/covergage-50%25-blue)
 
+<h3 align="center"><img width="800" style="border-radius:5px;" alt="thumbnail" src="https://repository-images.githubusercontent.com/994282365/e394cd38-f9d2-4825-9ccb-dae7400b46e0"></h3>
+
 <!-- TOC -->
 * [SnowflakeDB - Introduction](#snowflakedb---introduction)
   * [How to install?](#how-to-install)
