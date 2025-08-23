@@ -299,7 +299,7 @@ Now after running the database a binary file will be generated automatically in 
 The first 32-byte is the header and the next 32-byte represents the encryption key.
 
 ### How does an encrypted entry look like?
-When encrypting the database, each entry value will be encrypted without touching the hash or even changing the size.
+When encrypting the database, each entry value will be encrypted without touching the hash.
 
 Here is how does an encrypted database look like using `AES-256-CTR` algorithm:
 <img width="800" style="border-radius:5px;" alt="thumbnail" src="https://amatris.ir/cdn/images/snowflake-db-data-encryption-hexdump.png">
