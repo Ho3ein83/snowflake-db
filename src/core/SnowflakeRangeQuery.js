@@ -20,7 +20,7 @@ class SnowflakeRangeQuery {
      * with the specified field value greater than or equal to a target.
      * @param {Array<Object>} array - The sorted array to search within.
      * @param {number} target - The target value to compare against.
-     * @returns {Object|null} - The object with the smallest field value >= target, or null if none found.
+     * @return {Object|null} - The object with the smallest field value >= target, or null if none found.
      * @since 1.0.0
      */
     binarySearch(array, target) {
@@ -56,7 +56,7 @@ class SnowflakeRangeQuery {
     /**
      * Sorts the array by a specified field name.
      * @param {string} field_name - The field name to sort by.
-     * @returns {SnowflakeRangeQuery} - The current instance for chaining.
+     * @return {SnowflakeRangeQuery} - The current instance for chaining.
      */
     sortBy(field_name) {
 
@@ -80,7 +80,7 @@ class SnowflakeRangeQuery {
      *
      * @param {string} field_name - The field name to evaluate for the fit condition.
      * @param {number} fit - The minimum required value for the field.
-     * @returns {Object|null} - The smallest object with field value >= fit, or null if no such object exists.
+     * @return {Object|null} - The smallest object with field value >= fit, or null if no such object exists.
      *
      * @since 1.0.0
      */
@@ -99,7 +99,7 @@ class SnowflakeRangeQuery {
 
     /**
      * Gets the current array.
-     * @returns {Array<Object>} - The array managed by the query instance.
+     * @return {Array<Object>} - The array managed by the query instance.
      * @since 1.0.0
      */
     get array() {

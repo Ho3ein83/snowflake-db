@@ -5,24 +5,37 @@ const SnowflakeLogger = require("./src/core/SnowflakeLogger");
 const Snowflake = require("./src/core/Snowflake");
 
 const path = require("path");
-const appConfig = require("./app.json");
+const appConfigs = require("./app.json");
+const SnowflakeCypher = require("./src/core/SnowflakeCypher");
 
 Snowflake.core_path = Snowflake.resolvePath("src/core");
 
 module.exports = {
     Snowflake,
-    startSnowflake: (configs_yaml = null, app_config = null) => {
+    startSnowflake: (configs_yaml = null, configuration = null) => {
 
         // Configuration core for making your app customizable
         const yaml = SnowflakeYaml.fromFile(configs_yaml === null ? path.join(process.cwd(), "configs.yaml") : configs_yaml);
         Snowflake.yaml = yaml;
 
-        if(app_config === null)
-            app_config = appConfig;
+        if(configuration === null)
+            configuration = appConfigs;
+
+        Snowflake.isDevelopment = false;
+        if(typeof configuration === "object" && typeof configuration.is_development === "boolean")
+            Snowflake.isDevelopment = configuration.is_development;
 
         // Logger core for logging
         const logger = new SnowflakeLogger(yaml.get("logs"));
         Snowflake.logger = logger;
+
+        // Initialize encryption core
+        const cypher = new SnowflakeCypher(Snowflake.resolvePath(Snowflake.yaml.get("meids.encryption_cypher")));
+
+        if(Snowflake.yaml.isTrue("meids.encrypt"))
+            cypher.init();
+
+        Snowflake.cypher = cypher;
 
         // Validate app configs
         let is_app_valid = true;
@@ -37,11 +50,11 @@ module.exports = {
         };
         for(let [i, callback] of Object.entries(validate)){
             let is_valid = true, msg = `app.json: Property '${i}' is missing or invalid.`;
-            if(typeof app_config[i] === "undefined" || !app_config[i]){
+            if(typeof configuration[i] === "undefined" || !configuration[i]){
                 is_valid = false;
             }
             else{
-                const v = callback(app_config[i]);
+                const v = callback(configuration[i]);
                 if(v !== true) {
                     if(typeof v === "string" && v.length)
                         msg = v;

@@ -1,8 +1,11 @@
 const { createHash } = require('node:crypto');
 const msgpack = require("msgpack-lite");
+const appConfig = require("../../app.json");
 
 require("./SnowflakeExtend");
 const path = require("path");
+const fs = require("fs");
+const AccessToken = require("./objects/AccessToken").default;
 
 /**
  * Snowflake object
@@ -34,11 +37,22 @@ let Snowflake = {
      */
     server: null,
     /**
+     * The cypher core
+     * @type {import("./SnowflakeCypher")|null}
+     * @since 1.0.0
+     */
+    cypher: null,
+    /**
      * The absolute path of core directory
      * @type string
      * @since 1.0.0
      */
     core_path: "",
+    /**
+     * Whether the app is running in development or production environment
+     * @since 1.0.0
+     */
+    isDevelopment: false,
     /**
      * Determines if a value is considered true, these values are considered true: 'yes', 'true', '1', 1
      * It is also both case and type insensitive, which means you can pass 'True' or '1' and still get true
@@ -52,75 +66,155 @@ let Snowflake = {
             return ["true", "1", "yes", "on", "y"].includes(value.toLowerCase());
         return Boolean(value);
     },
+    stringify: (value, maxLength = null, ellipsis = "...", showType = false) => {
+        let type, data;
+
+        if(value === null) {
+            type = "null";
+            data = "";
+        }
+        else if(typeof value === "undefined") {
+            type = "undefined";
+            data = "";
+        }
+        else if(typeof value === "boolean") {
+            type = "bool";
+            data = value ? "True" : "False";
+        }
+        else if(typeof value === "number") {
+            type = "number";
+            data = value;
+        }
+        else if(typeof value === "string") {
+            type = "string";
+            data = value;
+        }
+        else if(Buffer.isBuffer(value)) {
+            type = "buffer";
+            data = value.toString("hex");
+        }
+        else if(Array.isArray(value)) {
+            type = "List";
+            data = JSON.stringify(value);
+        }
+        else{
+            type = typeof value;
+            data = JSON.stringify(value).trimChar("'").trimChar('"');
+        }
+
+        const padding = 10;
+        const dataLength = data.length;
+        if(maxLength !== null && dataLength > maxLength && dataLength - maxLength >= padding * 2){
+            data = data.substring(0, maxLength - 10) + ` ${ellipsis}[${dataLength - maxLength}]${ellipsis} ` + data.slice(dataLength - 10);
+        }
+
+        return (showType ? `[${type.toUcFirst()}] ` : "") + data;
+    },
+    /**
+     * Guess the type of variable
+     * @param {any} value
+     * @return {"undefined"|"object"|"boolean"|"number"|"string"|"function"|"symbol"|"bigint"}
+     * @since 10.0
+     */
+    typeof: value => {
+        let type = typeof value;
+        if (Array.isArray(value))
+            type = "array";
+        else if (value === null)
+            type = "null";
+        else if (Buffer.isBuffer(value))
+            type = "buffer";
+        return type;
+    },
     /**
      * Converts a size from one unit to another.
      * @param {string} input - The input size with unit (e.g., "1MB").
-     * @param {string} outputFormat - The target size unit (e.g., "KB").
+     * @param {"B"|"KB"|"MB"|"GB"} outputFormat - The target size unit (e.g., "KB").
      * @param {boolean} mbMode - If true, use binary conversion (1024), otherwise standard (1000).
-     * @returns {number} - The converted size in the target unit or 0 for invalid input.
+     * @return {number} - The converted size in the target unit or 0 for invalid input.
      * @since 1.0.0
      */
-    convertSize: function (input, outputFormat, mbMode = false) {
-        const mode = mbMode ? "binary" : "standard";
-        const conversionFactors = {
-            standard: {
-                B: 1,
-                    KB: 1000,
-                    MB: 1000 ** 2,
-                    GB: 1000 ** 3,
-            },
-            binary: {
-                B: 1,
-                    KB: 1024,
-                    MB: 1024 ** 2,
-                    GB: 1024 ** 3,
-            }
-        }
+    convertSize: function (input, outputFormat = "B", mbMode = false, max = null) {
+        const EXP = { "": 0, K: 1, M: 2, G: 3, T: 4, P: 5, E: 6 };
 
-        input = typeof input === "number" ? `${input}B` : input.toString();
+        const toStr = (v) => (typeof v === "number" ? `${v}B` : String(v)).trim();
 
-        const sizePattern = /^(\d+(\.\d+)?)\s*(B|KB|MB|GB)$/i;
-        const match = input.match(sizePattern);
-        if (!match)
-            return 0;
+        // Matches: 123, 123.45 + optional prefix + optional 'i' + 'B'
+        // Examples: 4GiB, 512MB, 1024B, 1tb, 2PiB
+        const sizePattern = /^\s*(\d+(?:\.\d+)?)\s*([KMGTPE]?)(I)?B\s*$/i;
 
-        const [_, sizeValue, , inputUnit] = match;
-        const size = parseFloat(sizeValue);
-        const inputUnitUpper = inputUnit.toUpperCase();
-        const outputFormatUpper = outputFormat.toUpperCase();
+        const inputStr = toStr(input);
+        const im = inputStr.match(sizePattern);
+        if (!im) return 0;
 
-        if (!conversionFactors[mode][inputUnitUpper] || !conversionFactors[mode][outputFormatUpper])
-            return 0;
+        const value = parseFloat(im[1]);
+        const inPrefix = (im[2] || "").toUpperCase(); // K, M, G, ...
+        const inBinary = !!im[3];                      // presence of 'i'
+        const inExp = EXP[inPrefix] ?? 0;
 
-        const sizeInBytes = size * conversionFactors[mode][inputUnitUpper];
-        return sizeInBytes / conversionFactors[mode][outputFormatUpper] || 0;
+        const bytes = value * Math.pow(inBinary ? 1024 : 1000, inExp);
+
+        if (typeof max === "number")
+            return Math.min(bytes, max);
+
+        const outStr = String(outputFormat).trim().toUpperCase();
+        const om = outStr.match(/^([KMGTPE]?)(I)?B$/);
+        if (!om) return 0;
+
+        const outPrefix = (om[1] || "").toUpperCase();
+        const outBinary = om[2] ? true : mbMode; // if user explicitly gave KiB/MiB/... prefer that
+        const outExp = EXP[outPrefix] ?? 0;
+
+        const denom = Math.pow(outBinary ? 1024 : 1000, outExp);
+        return bytes / denom || 0;
     },
     /**
      * Converts a size in bytes to the largest possible unit.
      * @param {number} bytes - The size in bytes.
      * @param {boolean} binaryMode - Whether to use binary mode (1024) or decimal mode (1000).
-     * @param {number} decimals - The number of decimals
+     * @param {null|number} decimals - The number of decimals, pass null to switch between 2 and 0 decimals
+     *     automatically
      * @param {string} spacer - The spacer between output size and unit. Default is space " "
-     * @returns {string} - The size with the largest possible unit (e.g., "1KB", "1MiB").
+     * @return {string} - The size with the largest possible unit (e.g., "1KB", "1MiB").
      * @since 1.0.0
      */
     formatBytes: (bytes, binaryMode = false, decimals=2, spacer=" ") => {
+
+        // Negative bytes?
         if (bytes < 0)
             return "N/A";
 
+        // Set the base
         const base = binaryMode ? 1024 : 1000;
+
+        // Set the units based on the size base
         const units = binaryMode
             ? ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"]
             : ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
 
+
         let unitIndex = 0;
 
+        // As long as 'bytes' is dividable by the base and there are more units to check for
         while (bytes >= base && unitIndex < units.length - 1) {
             bytes /= base;
             unitIndex++;
         }
 
-        return `${bytes.toFixed(decimals)}${spacer}${units[unitIndex]}`;
+        const format = `${bytes.toFixed(decimals)}${spacer}${units[unitIndex]}`;
+
+        return decimals === null ? format.replace(".00", "") : format;
+
+    },
+    /**
+     * Estimate the size of an object
+     * @param {any} object - Any type of primitive data
+     * @return {number}
+     * @since 1.0.0
+     */
+    roughSizeOf: object => {
+        const data = msgpack.encode(object);
+        return data.length;
     },
     /**
      * Zerofill a number
@@ -263,7 +357,7 @@ let Snowflake = {
      * @param {string} item - The item to hash.
      * @param {number} hashCount - The number of hashes you want to make
      * @param {number} size - The size of the hash array
-     * @returns {number[]} An array of hash values.
+     * @return {number[]} An array of hash values.
      */
     bloomHash: (item, hashCount, size)  => {
         const hashes = [];
@@ -273,8 +367,114 @@ let Snowflake = {
         }
         return hashes;
     },
+    /**
+     * Traverse into an object and overwrite its data if needed
+     * @param {object} object - Input object
+     * @param {function} callback - Callback
+     * @return {object}
+     * @since 1.0.0
+     */
+    traverseObject: (object, callback) => {
+
+        let newObject = {};
+
+        for(const key in object){
+
+            // Ensure the property belongs to the object itself, not its prototype chain
+            if(Object.prototype.hasOwnProperty.call(object, key)){
+                let value = object[key];
+
+                // Apply the callback function to the current key-value pair
+                const overwrite = callback(key, value, object);
+                if(typeof overwrite !== "undefined")
+                    value = overwrite;
+
+                // If the value is an object, not null and not an array
+                if(typeof value === "object" && value !== null && !Array.isArray(value) && !Buffer.isBuffer(value)){
+                    // Recursively call the function for nested objects
+                    newObject[key] =  Snowflake.traverseObject(value, callback);
+                }
+                else{
+                    newObject[key] = value;
+                }
+
+            }
+
+        }
+
+        return newObject;
+
+    },
+    /**
+     * Check if a file has enough permissions to read and write data
+     * @param {string} filePath - File path
+     * @return {boolean}
+     * @since 1.0.0
+     */
+    canReadWrite: (filePath) => {
+        try {
+            // Check existence + read + write
+            fs.accessSync(filePath, fs.constants.F_OK | fs.constants.R_OK | fs.constants.W_OK);
+            return true;
+        } catch (err) {
+            return false;
+        }
+    },
+    /**
+     * Get current timestamp (divided by 1000)
+     * @param {boolean} micro_time
+     * @return {number}
+     * @since 1.0.0
+     */
     now: (micro_time=true) => {
         return Math.floor(micro_time ? Date.now() : Date.now() / 1000);
+    },
+    /**
+     * Get the passed time since specified time
+     * @param {number} time - Timestamp in microsecond
+     * @return {string}
+     * @since 1.0.0
+     */
+    sinceDate: time => {
+        if(time === null)
+            return "Never";
+
+        const diff = time > 0 ? Math.floor((Date.now() - time) / 1000) : 0;
+        if(diff < 0)
+            return "Unknown";
+
+        const days = Math.floor(diff / 86400);
+
+        if(days >= 365){
+            const year = Math.floor(days / 365);
+            return `${year} year${year > 1 ? "s" : ""} ago`;
+        }
+        else if(days >= 30){
+            const month = Math.floor(days / 30);
+            return `${month} month${month > 1 ? "s" : ""} ago`;
+        }
+        else if(days >= 7){
+            const weeks = Math.floor(days / 7);
+            return `${weeks} week${weeks > 1 ? "s" : ""} ago`;
+        }
+        else if(days >= 1){
+            return `${days} day${days > 1 ? "s" : ""} ago`;
+        }
+        else if(diff >= 3600){
+            const hours = Math.floor(diff / 3600);
+            return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+        }
+        else if(diff >= 60){
+            const minutes = Math.floor(diff / 60);
+            return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
+        }
+        else if(diff >= 1){
+            return `${diff} second${diff > 1 ? "s" : ""} ago`;
+        }
+        else{
+            return "Now";
+        }
+
     },
     /**
      * Generate random string<br>
@@ -286,7 +486,8 @@ let Snowflake = {
      * - `*` or `all` (Numbers from 0 to 9)
      * - Anything else would use that key as reference key, e.g: `abcABC`
      * @param {number} len - The length of string you want to generate
-     * @param {string} key - The key you want to make string from, or the string reference
+     * @param {"lower"|"upper"|"letters"|"numbers"|"all"|"*"|string} key - The key you want to make string from, or the
+     *     string reference
      * @return {string} - Randomly generated string from the reference
      * @since 1.0.0
      */
@@ -317,6 +518,36 @@ let Snowflake = {
 
         return string;
     },
+    /**
+     * Validate the token and make access object if the token is valid
+     * @param {string} accessToken
+     * @return {AccessToken|boolean}
+     * @since 1.0.0
+     */
+    authenticateToken: accessToken => {
+        const data = (appConfig.access_keys ?? {})[accessToken] ?? false;
+        if(typeof data !== "object")
+            return false;
+        return new AccessToken(data);
+    },
+    rangeNumber: (number, min = null, max = null, defaultNumber = null) => {
+        let num = parseInt(number);
+
+        if(isNaN(num)) {
+            if(defaultNumber !== null)
+                return defaultNumber;
+            return min === null ? 0 : min;
+        }
+
+        if(min !== null)
+            num = Math.max(num, min);
+
+        if(max !== null)
+            num = Math.min(num, max);
+
+        return num;
+
+    },
     help: {
         "invalid": [
             "1. Your files may be corrupted and they cannot be recovered.",
@@ -331,7 +562,7 @@ let Snowflake = {
      * @type {Object}
      * @since 1.0.0
      */
-    HDR_FULL_SIZE: 256,
+    HDR_FULL_SIZE: 32,
     /**
      * Header fields size (in bytes)
      * @type {{DATA: number, VERSION_CODE: number, TIME: number, SIGNATURE: number}}
@@ -340,8 +571,9 @@ let Snowflake = {
     HDR_SIZE: {
         VERSION_CODE: 2,
         SIGNATURE: 8,
-        DATA: 128,
-        TIME: 8
+        DATA: 16,
+        TIME: 8,
+        ENCRYPTION: 1
     },
     /**
      * Header fields position
@@ -351,8 +583,9 @@ let Snowflake = {
     HDR_POS: {
         VERSION_CODE: 0,
         SIGNATURE: 2,
-        DATA: 128,
-        TIME: 128,
+        DATA: 16,
+        TIME: 16,
+        ENCRYPTION: 24
     },
     /**
      * Database file states
@@ -377,7 +610,8 @@ let Snowflake = {
      * @since 1.0.0
      */
     DUMMY: {
-        UNDEF: Symbol("SnowflakeUndefined")
+        UNDEF: Symbol("SnowflakeUndefined"),
+        BREAK: Symbol("SnowflakeBreak")
     }
 };
 

@@ -42,7 +42,7 @@ class SnowflakeShell {
 
     #access = "";
 
-    #user_alias = "";
+    #userAlias = "";
 
     #token = null;
 
@@ -68,10 +68,10 @@ class SnowflakeShell {
 
         this.#uuid = uuid4();
 
-        this.connection_timeout = null;
+        this.connectionTimeout = null;
 
         if(configs.timeout > 0){
-            this.connection_timeout = setTimeout(() => {
+            this.connectionTimeout = setTimeout(() => {
                 this.destroy("Connection timed out before completing the authentication.");
             }, configs.timeout);
         }
@@ -81,12 +81,12 @@ class SnowflakeShell {
 
     /**
      * Check if access token exists inside app.json
-     * @param {string} access_token - Access token to authorize
+     * @param {string} accessToken - Access token to authorize
      * @return {{alias: string, permissions: Array, max_connections: number}|boolean}
      * @since 1.0.0
      */
-    authenticate(access_token){
-        return (appConfig.access_keys ?? {})[access_token] ?? false;
+    authenticate(accessToken){
+        return (appConfig.access_keys ?? {})[accessToken] ?? false;
     }
 
     /**
@@ -104,9 +104,10 @@ class SnowflakeShell {
         let lockdown_reported = false;
         this.#socket.on("data", (data) => {
             const command = data.toString("utf-8").trim();
-            const size_limit = this.#configs.max_input_size;
-            if(size_limit > 0 && command.length > size_limit){
-                this.send("size_limit", `Size limit of ${Snowflake.formatBytes(size_limit, true, 0, "")} exceeded.`, size_limit, 9);
+            const sizeLimit = this.#configs.max_input_size;
+            // Command length * 2 because are strings are encoded with UTF-16 (2 bytes)
+            if(sizeLimit > 0 && command.length * 2 > sizeLimit){
+                this.send("size_limit", `Size limit of ${Snowflake.formatBytes(sizeLimit, true, 0, "")} exceeded.`, sizeLimit, 9);
                 this.writePrompt(1);
                 return;
             }
@@ -163,13 +164,13 @@ class SnowflakeShell {
                             return;
                         }
                     }
-                    clearTimeout(this.connection_timeout);
+                    clearTimeout(this.connectionTimeout);
                     this.clear();
-                    this.#user_alias = auth.alias || "user";
-                    Snowflake.logger.log(`%magenta%[CLI]%reset% Client ${uuid} authorized as '${this.#user_alias}' using access token.`);
+                    this.#userAlias = auth.alias || "user";
+                    Snowflake.logger.log(`%magenta%[CLI]%reset% Client ${uuid} authorized as '${this.#userAlias}' using access token.`);
                     SnowflakeEvents.emit("cli_server_shell_authorized", {uuid, token: command});
                     SnowflakeEvents.emit("cli_server_login_attempt", {shell: this, success: true, token: command, cause: ""});
-                    this.sendState("authorized", this.#user_alias, -2);
+                    this.sendState("authorized", this.#userAlias, -2);
                     if(this.mode === "echo"){
                         this.#socket.write(this.header);
                         this.writePrompt();
@@ -210,7 +211,7 @@ class SnowflakeShell {
         });
 
         this.#socket.on("error", (err) => {
-            console.error(`Error: ${err.message}`);
+            console.error(`SocketError: ${err.message}`);
             SnowflakeEvents.emit("cli_server_connection_error", { data: err, shell: this });
         });
 
@@ -225,7 +226,7 @@ class SnowflakeShell {
     destroy(error_message=null){
         if(error_message === null)
             error_message = "Disconnected";
-        this.#socket.write(Snowflake.logger.format_color(`\n%red%${error_message}\n`, this.mode === "json"));
+        this.#socket.write(Snowflake.logger.formatColor(`\n%red%${error_message}\n`, this.mode === "json"));
         this.#socket.destroy(new Error(error_message));
         SnowflakeEvents.emit("cli_server_connection_end", { shell: this });
         return this;
@@ -243,12 +244,19 @@ class SnowflakeShell {
      */
     send(action, message_text, value = null, status_code = 0, print_value=false) {
         const status = Snowflake.getStatus(status_code);
-        const data = {action, message_text, value, status_code, status: status.id, success: status.success};
+        const data = {
+            action,
+            message_text: this.mode === "json" ? Snowflake.logger.stripAnsiCodes(message_text) : message_text,
+            value,
+            status_code,
+            status: status.id,
+            success: status.success
+        };
         switch(this.mode){
             case "echo":
                 let after = "";
                 if(print_value && status_code === 0)
-                    after = "\n" + JSON.stringify(value, null, 1);
+                    after = "\n" + (Snowflake.stringify(value, 60, "...", true));
                 this.socket.write((message_text + after).trim());
                 break;
             case "json":
@@ -293,7 +301,7 @@ class SnowflakeShell {
             return this;
         if(br > 0)
             this.#socket.write("\n".repeat(br));
-        this.#socket.write(this.prompt.replaceAll("{USER}", this.#user_alias))
+        this.#socket.write(this.prompt.replaceAll("{USER}", this.#userAlias))
         return this;
     }
 
@@ -351,7 +359,7 @@ class SnowflakeShell {
     }
 
     get header(){
-        return Snowflake.logger.format_color(`
+        return Snowflake.logger.formatColor(`
   ____                       __ _       _        
  / ___| _ __   _____      __/ _| | __ _| | _____ 
  \\___ \\| '_ \\ / _ \\ \\ /\\ / / |_| |/ _\` | |/ / _ \\
@@ -364,7 +372,7 @@ Enter your command or enter 'help' for more info.\n\n`);
     }
 
     get prompt(){
-        return Snowflake.logger.format_color(this.#prompt);
+        return Snowflake.logger.formatColor(this.#prompt);
     }
 
     get token(){

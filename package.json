@@ -1,11 +1,11 @@
 {
-  "name": "snowflake-db",
+  "name": "snowflake-database",
   "version": "1.0.0",
   "main": "test.js",
-  "keywords": [],
-  "author": "",
+  "keywords": ["In-memory", "database", "cache", "caching", "snowflake"],
+  "author": "Amatris",
   "license": "GPL-2.0-or-later",
-  "description": "",
+  "description": "Advanced in-memory database system",
   "dependencies": {
     "express": "^4.21.2",
     "yaml": "latest",

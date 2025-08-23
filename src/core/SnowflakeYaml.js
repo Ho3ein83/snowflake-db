@@ -19,12 +19,12 @@ const SnowflakeYaml = (function(){
 
         /**
          * Get a property from parsed YAML string
-         * @param {string|null} key - Property key to get, or pass null to get the whole YAML object
-         * @param {any|null} def - Default value in case the key is missing, default is null
+         * @param {SnowflakeConfigurationString} key - Property key to get, or pass null to get the whole YAML object
+         * @param {*} def - Default value in case the key is missing, default is null
          * @return {any}
          * @since 1.0.0
          */
-        this.get = (key = null, def = null) => {
+        this.get = (key, def = null) => {
             if(key === null)
                 return this.yaml;
             if(typeof key === "string" && key.indexOf(".") >= 0){
@@ -39,7 +39,7 @@ const SnowflakeYaml = (function(){
 
         /**
          * Get a config property as number
-         * @param {string} key - Option key
+         * @param {SnowflakeConfigurationString} key - Option key
          * @param {number} def - Default value
          * @return {number}
          * @since 1.0.0
@@ -47,7 +47,21 @@ const SnowflakeYaml = (function(){
         this.getInt = (key, def=0) => {
             const n = parseInt(this.get(key, def));
             return isNaN(n) ? def : n;
-        };
+        }
+
+        /**
+         * Get formatted file size from config file. For example 1000B will be shown as 1 KB
+         * @param {SnowflakeConfigurationString} key - Option key
+         * @param {boolean} mbMode - Whether to use mega-binary mode
+         * @param {null|number} decimals - The number of fractions in the output size, pass null for auto
+         * @param {string} def - The default size in case of failure
+         * @return {string}
+         * @since 1.0.0
+         */
+        this.getBytes = (key, mbMode = false, decimals = null, def = "0B") => {
+            const size = Snowflake.convertSize(this.get(key, def));
+            return Snowflake.formatBytes(size, mbMode, decimals);
+        }
 
         /**
          * Determines if a value is considered true

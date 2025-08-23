@@ -1,8 +1,8 @@
 const Snowflake = require("./Snowflake");
 const SnowflakeEvents = require("./SnowflakeEvents");
 const SnowflakeShell = require("./SnowflakeShell");
-const { v4: uuid4 } = require("uuid");
-const { createServer } = require("net");
+const {v4: uuid4} = require("uuid");
+const {createServer} = require("net");
 const fs = require("fs");
 
 const appConfig = require("../../app.json");
@@ -50,6 +50,13 @@ class SnowflakeCLI {
     #aliases = {};
 
     /**
+     * The list of shortcuts for existing commands
+     * @type {Object}
+     * @since 1.0.0
+     */
+    #shortcuts = {};
+
+    /**
      * Lockdown data
      * @type {Object}
      * @since 1.0.0
@@ -65,7 +72,8 @@ class SnowflakeCLI {
 
     /**
      * Configurations
-     * @type {{log_connections: boolean, authentication_timeout: number, lockdown: string, cooldown: number, log_logins: boolean, max_login_attempt: number}}
+     * @type {{log_connections: boolean, authentication_timeout: number, lockdown: string, cooldown: number,
+     *     log_logins: boolean, max_login_attempt: number}}
      * @since 1.0.0
      */
     #configs = {
@@ -88,30 +96,36 @@ class SnowflakeCLI {
      * @since 1.0.0
      */
     #initCommands() {
+
+        // Help command
         this.command("help", {
             exec: d => {
-                const { args } = d;
+                const {args} = d;
                 return [this.getHelp(args.length > 0 ? args : null), "", 0];
             },
             help: `Get the list of existing commands with usage
 Usage: help [?COMMANDS]
     [COMMANDS]:
         * Optional
-        * Space separated commands you want to know more about.
+        * Space separated commands you want to know more about.        
 Examples: help
           help command1
           help command1 command2
           help clear get set`,
             internal: true
         });
+
+        // Clear the screen
         this.command("clear", {
-            help: `Clears your screen if this is possible.
+            help: `Clears your screen if this is possible.                                
 Alias: cls`,
             internal: true,
-            alias: "cls"
         });
+
+        // Exit the shell
         this.command("exit", {
             help: `Exit the shell
+Alias: ex
 Usage: exit [?STATUS]
     [STATUS]:
     * Optional
@@ -120,7 +134,6 @@ Usage: exit [?STATUS]
 Examples: exit
           exit 1`,
             internal: true,
-            alias: "cls",
             /**
              * @param d
              * @param {Object|SnowflakeShell|null} shell
@@ -128,31 +141,39 @@ Examples: exit
              */
             exec: (d, shell) => {
                 if (typeof shell === "object" && shell.constructor.name === "SnowflakeShell") {
-                    const { args } = d;
+                    const {args} = d;
                     const exit_code = Math.max(parseInt(args[0] ?? 0) || 0, 0);
                     shell.exit(exit_code);
                 }
                 return ["", null, 4];
             }
         });
+
+        // Get current server info
         this.command("info", {
             exec: (args) => {
-                return [this.getInfo(args), "", 0];
+                return [Snowflake.logger.box("Now", new Date().toUTCString()) + "\n" + this.getInfo(args), "", 0];
             },
             help: `Get all the information about the running application.
 Usage: info [?FILTERS]
     [FILTERS]:
         * Optionals
         * Default value: "all"
-        * Options: "database" | "db", "app", "server", "all" | "*"
+        * Options: "database" or "db", "persistent", "memory" or "mem", "app", "server", "all" or "*"  
 
 Examples: info databases
           info db
-          info app server`,
+          info app server
+          info persistent`,
             usage: "info [FILTERS]",
             internal: true
         });
+
+        // Assign aliases
+        this.alias("ex", "exit");
+
         return this;
+
     }
 
     /**
@@ -182,11 +203,13 @@ Examples: info databases
 
     /**
      * Checks whether a subject or the entire CLI is locked down.
-     * By passing `null` as subject, this method will check all entries in the blacklist to determine if any are locked down.
-     * The lockdown status depends on configured maximum login attempts and the lockdown mode (IP or token).
+     * By passing `null` as subject, this method will check all entries in the blacklist to determine if any are locked
+     * down. The lockdown status depends on configured maximum login attempts and the lockdown mode (IP or token).
      *
-     * @param {string|null} [subject=null] - The token or IP address to check for lockdown status. If `null`, all blacklist entries are checked.
-     * @return {boolean} - Returns `true` if the specified subject or any blacklist entry is locked down, otherwise `false`.
+     * @param {string|null} [subject=null] - The token or IP address to check for lockdown status. If `null`, all
+     *     blacklist entries are checked.
+     * @return {boolean} - Returns `true` if the specified subject or any blacklist entry is locked down, otherwise
+     *     `false`.
      * @since 1.0.0
      */
     lockedDown(subject = null) {
@@ -195,7 +218,7 @@ Examples: info databases
         if (!["ip", "token"].includes(this.#configs.lockdown))
             return false;
         const isLockedDown = s => {
-            const { time, attempts } = this.#lockdown[s] ?? {};
+            const {time, attempts} = this.#lockdown[s] ?? {};
             if (time && attempts) {
                 const now = Snowflake.now(false);
                 if (now <= time && attempts >= this.#configs.max_login_attempt)
@@ -218,7 +241,8 @@ Examples: info databases
      * If the subject is not in the blacklist, the method returns an empty object.
      *
      * @param {string} subject - The token or IP address for which to retrieve blacklist data.
-     * @return {Object} - The blacklist data associated with the specified subject, or an empty object if the subject is not blacklisted.
+     * @return {Object} - The blacklist data associated with the specified subject, or an empty object if the subject
+     *     is not blacklisted.
      * @since 1.0.0
      */
     getLockdownData(subject) {
@@ -231,7 +255,8 @@ Examples: info databases
      * This method generates a formatted string containing usage instructions and descriptions for commands.
      * It can provide help for all available commands, a specific command, or multiple specified commands.
      *
-     * @param {string|string[]|null} [command=null] - The command or commands to retrieve help for. If `null`, help for all commands is returned. Can be a string for a single command or an array of command names.
+     * @param {string|string[]|null} [command=null] - The command or commands to retrieve help for. If `null`, help for
+     *     all commands is returned. Can be a string for a single command or an array of command names.
      * @return {string} - A formatted string of help instructions for the requested command(s).
      * @since 1.0.0
      */
@@ -241,19 +266,23 @@ Examples: info databases
             if (!data)
                 return "";
             const h = data.help ?? "";
-            return Snowflake.logger.box(data.usage || command_name, h) + "\n";
+            return Snowflake.logger.box(data.usage || command_name, Snowflake.logger.formatColor(h)) + "\n";
         }
         if (command === null) {
-            help += Snowflake.logger.box("@echo | @json", "Enter echo mode (for CLI) or JSON mode (for apps)") + "\n";
-            help += Snowflake.logger.box("@timing on|off", "Toggle execution time measurement state.") + "\n";
+            help += Snowflake.logger.box("@echo | @json", "Enter echo mode (for CLI) or JSON mode (for apps) ") + "\n";
+            help += Snowflake.logger.box("@timing on|off", "Toggle execution time measurement state.          ") + "\n";
             for (let [command_name, value] of Object.entries(this.#commands)) {
                 help += getHelp(command_name, value);
             }
-        } else {
+        }
+        else {
             if (typeof command === "string") {
-                help += getHelp(command, this.#commands[command] ?? false);
-            } else if (typeof command === "object" && Array.isArray(command)) {
+                command = this.getOriginalCommand(command);
+                help += getHelp(command, this.#commands[command] ?? {});
+            }
+            else if (typeof command === "object" && Array.isArray(command)) {
                 for (let c of new Set(command)) {
+                    c = this.getOriginalCommand(c);
                     help += getHelp(c, this.#commands[c] ?? false);
                 }
             }
@@ -265,15 +294,19 @@ Examples: info databases
      * Retrieves information about the current application.
      *
      * This method fetches and formats key information about the application's runtime and configuration settings.
-     * It is particularly useful for the 'info' command in the CLI to display details such as server uptime, version info, and database settings.
+     * It is particularly useful for the 'info' command in the CLI to display details such as server uptime, version
+     * info, and database settings.
      *
-     * @param {Object} data - An object containing parameters for retrieving information. It should contain an `args` property.
-     * @param {Array<string>} data.args - An array of strings specifying which categories of information to retrieve. Supported values include "all", "server", "app", "db", and "database".
-     * @return {string} - A formatted string containing the requested application information, encapsulated in a visual box-style.
+     * @param {Object} data - An object containing parameters for retrieving information. It should contain an `args`
+     *     property.
+     * @param {Array<string>} data.args - An array of strings specifying which categories of information to retrieve.
+     *     Supported values include "all", "server", "app", "db", and "database".
+     * @return {string} - A formatted string containing the requested application information, encapsulated in a visual
+     *     box-style.
      * @since 1.0.0
      */
     getInfo(data = {}) {
-        let { args } = data;
+        let {args} = data;
 
         if (!Array.isArray(args) || args.length <= 0)
             args = ["*"];
@@ -283,25 +316,59 @@ Examples: info databases
             table.push(...items);
         };
 
+
+        const usedMemoryInPercent = Snowflake.core.usedMemoryPercent;
+        let usedMemoryColor = "%green%";
+        if(usedMemoryInPercent >= 90)
+            usedMemoryColor = "%red%";
+        else if(usedMemoryInPercent >= 70)
+            usedMemoryColor = "%warning%";
+        else if(usedMemoryInPercent >= 50)
+            usedMemoryColor = "%yellow%";
+        else if(usedMemoryInPercent >= 40)
+            usedMemoryColor = "%blue%";
+
+        const memoryUsage = process.memoryUsage();
+
         // Mapping for categories and their corresponding data
         const categoryData = {
             server: [
-                { key: "Uptime", value: Snowflake.secondsToClockTime(process.uptime()) },
-                { key: "Webserver port", value: Snowflake.yaml.getInt("server.port") },
-                { key: "CLI port", value: Snowflake.yaml.getInt("server.cli_port") },
+                {key: "Server", value: "", divider: true, color: "cyan"},
+                {key: "Uptime", value: Snowflake.secondsToClockTime(process.uptime())},
+                {key: "Webserver Port", value: Snowflake.yaml.getInt("server.port")},
+                {key: "CLI Port", value: Snowflake.yaml.getInt("server.cli_port")},
+                {key: "Heap Total", value: Snowflake.formatBytes(memoryUsage.heapTotal, Snowflake.core.mbMode)},
+                {key: "Heap Used", value: Snowflake.formatBytes(memoryUsage.heapUsed, Snowflake.core.mbMode)}
             ],
             app: [
-                { key: "Version name", value: appConfig.version },
-                { key: "Version code", value: appConfig.version_code },
-                { key: "Memory monitor", value: Snowflake.yaml.isTrue("memory.monitor") ? "Yes" : "No" },
-                { key: "Max memory", value: Snowflake.yaml.get("memory.max_size", "N/A") },
+                {key: "Application", value: "", divider: true, color: "cyan"},
+                {key: "Version Name", value: appConfig.version},
+                {key: "Version Code", value: appConfig.version_code},
             ],
             database: [
-                { key: "MEID version", value: appConfig.meid_version },
-                { key: "MEIDs count", value: Snowflake.yaml.getInt("meids.count") },
-                { key: "MEIDs encryption", value: Snowflake.yaml.isTrue("meids.encrypt") ? "Yes" : "No" },
+                {key: "Database", value: "", divider: true, color: "cyan"},
+                {key: "MEID Version", value: appConfig.meid_version},
+                {key: "MEIDs Count", value: Snowflake.yaml.getInt("meids.count")},
+                {key: "MEIDs Encryption", value: Snowflake.yaml.isTrue("meids.encrypt") ? "Enabled" : "Disabled"},
+                {key: "Last Reload", value: Snowflake.core.lastReload > 0 ? Snowflake.sinceDate(Snowflake.core.lastReload) : "%faint%Never"},
             ],
+            persistent: [
+                {key: "Persistent", value: "", divider: true, color: "cyan"},
+                {key: "Persistent Status", value: ((Snowflake.core.isUnsaved === null ? "No changes" : Snowflake.core.isUnsaved ? "%orange%Unsaved (needs to call persistent)" : "%green%Saved") + "%reset%")},
+                {key: "Last Persistent Call", value: Snowflake.core.lastPersistent > 0 ? Snowflake.sinceDate(Snowflake.core.lastPersistent) : "%faint%Never"},
+            ],
+            memory: [
+                {key: "Memory", value: "", divider: true, color: "cyan"},
+                {key: "Monitor", value: Snowflake.yaml.isTrue("memory.monitor") ? "%green%Enabled" : "%red%Disabled"},
+            ]
         };
+
+        if(Snowflake.core.monitorEnabled){
+            categoryData.memory.push(
+                {key: "Max Memory", value: Snowflake.formatBytes(Snowflake.core.maxMemory, Snowflake.core.mbMode)},
+                {key: "Used Memory", value:  Snowflake.formatBytes(Snowflake.core.usedMemory, Snowflake.core.mbMode).replace(".00", "") + usedMemoryColor + ` (${usedMemoryInPercent}%)` + "%reset%" }
+            );
+        }
 
         // Handle wildcard alias
         const normalizedArgs = args.map((arg) => (arg === "*" ? "all" : arg));
@@ -309,21 +376,24 @@ Examples: info databases
 
         // Process each argument
         for (const arg of normalizedArgs) {
-            if (["all", "server"].includes(arg)) {
+            if(["all", "server"].includes(arg)) {
                 appendData(categoryData.server);
             }
-            if (["all", "app"].includes(arg)) {
+            if(["all", "app"].includes(arg)) {
                 appendData(categoryData.app);
             }
-            if (["all", "db", "database"].includes(arg)) {
+            if(["all", "memory", "mem"].includes(arg)) {
+                appendData(categoryData.memory);
+            }
+            if(["all", "db", "database"].includes(arg)) {
                 appendData(categoryData.database);
+            }
+            if(["all", "persistent"].includes(arg)) {
+                appendData(categoryData.persistent);
             }
         }
 
-        const tableContent = Snowflake.logger.format_color(
-            Snowflake.logger.table(table, 0, "clear", "-", 0, false),
-            true
-        );
+        const tableContent = Snowflake.logger.table(table, 0, "clear", "-", 0, false)
 
         return Snowflake.logger.box("Info", tableContent.trim());
     }
@@ -350,8 +420,11 @@ Examples: info databases
      * @param {string} command - The name of the command to be added.
      * @param {Object} data - The parameters providing details about the command.
      * @param {string} [data.help] - A detailed description about what the command does.
-     * @param {Function} [data.validate] - A function that provides validation logic for the command. Returns a boolean indicating if the validation is successful. Defaults to always true if not provided.
-     * @param {Function} [data.exec] - The function that executes the command logic. Should return an array containing a message, a value, a status code, and an output status (true or false). Defaults to returning `["", null, 0, null]` if not provided.
+     * @param {Function} [data.validate] - A function that provides validation logic for the command. Returns a boolean
+     *     indicating if the validation is successful. Defaults to always true if not provided.
+     * @param {Function} [data.exec] - The function that executes the command logic. Should return an array containing
+     *     a message, a value, a status code, and an output status (true or false). Defaults to returning `["", null,
+     *     0, null]` if not provided.
      * @param {boolean} [data.internal=false] - Indicates if the command is a built-in command.
      * @param {string} [data.usage] - Instructions or a template indicating how the command should be used.
      * @return {this} - Returns the current instance for method chaining.
@@ -381,8 +454,8 @@ Examples: info databases
     /**
      * Retrieves the original command name, resolving aliases if necessary.
      *
-     * If an alias is provided as the `command_name`, this method returns the original command name associated with that alias.
-     * If there is no alias, it simply returns the `command_name` itself.
+     * If an alias is provided as the `commandName`, this method returns the original command name associated with
+     * that alias. If there is no alias, it simply returns the `commandName` itself.
      *
      * @example
      * // Assuming 'start' is an alias for the original command 'launch'.
@@ -391,34 +464,85 @@ Examples: info databases
      * // If there is no alias, the original command name is returned.
      * SnowflakeCLI.getOriginalCommand('stop'); // Output: 'stop'
      *
-     * @param {string} command_name - The name of the command or its alias.
-     * @return {string} - The original command name if an alias was provided, otherwise returns the input `command_name`.
+     * @param {string} commandName - The name of the command or its alias.
+     * @return {string} - The original command name if an alias was provided, otherwise returns the input
+     *     `commandName`.
      *
      * @since 1.0.0
      */
-    getOriginalCommand(command_name) {
-        return this.#aliases[command_name] ?? command_name;
+    getOriginalCommand(commandName) {
+        return this.#aliases[commandName] ?? commandName;
+    }
+
+    /**
+     * Retrieve the command assigned to a specific shortcut.
+     * If the given shortcut doesn't exist, it will be returned as it is.
+     * A valid shortcut contains the small and capital letters from A to Z, numbers (0 to 9), hyphen (-) and/or
+     * underscore (_)
+     *
+     * @param {string} input - The input query or shortcut
+     *
+     * @example
+     * // A valid shortcut assigned to a command
+     * SnowflakeCLI.parseShortcut('trash'); // Output: 'list --scope=trash'
+     *
+     * // A valid shortcut without a reference command
+     * SnowflakeCLI.getOriginalCommand('get-all'); // Output: 'get-all'
+     *
+     * // An invalid shortcut
+     * SnowflakeCLI.getOriginalCommand('get all'); // Output: 'get all'
+     *
+     * @return {string|any} - The shortcut query if the shortcut exists, the given input otherwise
+     * @since 1.0.0
+     */
+    parseShortcut(input){
+        if(/[a-zA-Z0-9\-_]/.test(input))
+            return this.#shortcuts[input] ?? input;
+        return input;
     }
 
     /**
      * Creates an alias for a specific command.
      *
-     * @param {string} alias_name - The alias to assign to the target command.
-     * @param {string} target_command - The command that the alias will point to.
-     * @returns {this} - Returns the current instance for method chaining.
+     * @param {string} aliasName - The alias to assign to the target command.
+     * @param {string} targetCommand - The command that the alias will point to.
+     * @return {this} - Returns the current instance for method chaining.
      *
      * @example
      * SnowflakeCLI.alias('delete', 'remove'); // Creates an alias 'delete' for the 'remove' command.
      *
      * @description
-     * The `alias` method allows assigning an alternative name (`alias_name`)
-     * for an existing command (`target_command`). This makes it easier to use
+     * The `alias` method allows assigning an alternative name (`aliasName`)
+     * for an existing command (`targetCommand`). It makes it easier to use
      * or customize command names for the CLI users. Aliases are stored internally
      * in the `#aliases` object.
      * @since 1.0.0
      */
-    alias(alias_name, target_command) {
-        this.#aliases[alias_name] = target_command;
+    alias(aliasName, targetCommand) {
+        this.#aliases[aliasName] = targetCommand;
+        return this;
+    }
+
+    /**
+     * Creates a shortcut for a specific command.
+     *
+     * @param {string} shortcutName - The shortcut to assign to the target command.
+     * @param {string} shortcutCommand - The command that will be executed as shortcut. Unlike aliases, arguments are
+     *     allowed.
+     *
+     * @example
+     * SnowflakeCLI.shortcut('list --scope=trash', 'trash'); // Creates a shortcut for `list` command
+     *
+     * @description
+     * The `shortcut` method lets you execute the existing command presets. It makes it easier to run long queries with
+     *     just a single command. Shortcuts are stored internally in the `#aliases` object.
+     *
+     * @return {this} - Returns the current instance for method chaining.
+     *
+     * @since 1.0.0
+     */
+    shortcut(shortcutName, shortcutCommand) {
+        this.#shortcuts[shortcutName] = shortcutCommand;
         return this;
     }
 
@@ -438,6 +562,8 @@ Examples: info databases
      * // }
      *
      * @param {string} input - The input command-line string to be parsed.
+     * @param {boolean} checkShortcut - Whether to look shortcuts for command
+     * @param {boolean} checkAlias - Whether to look for commands alias
      *
      * @return {Object} - An object with `command`, `args`, and `options` properties:
      *   - `command` is a string representing the command name.
@@ -446,7 +572,7 @@ Examples: info databases
      *
      * @since 1.0.0
      */
-    parseCommand(input) {
+    parseCommand(input, checkAlias = false, checkShortcut = false) {
         const result = {
             command: '',
             args: [],
@@ -456,25 +582,34 @@ Examples: info databases
         // Regular expression to match arguments and options
         const regex = /"([^"]*)"|'([^']*)'|--(\S+)=(\S+)|--(\S+)|-(\S)|(\S+)/g;
 
+        // Parse shortcuts if needed
+        if(checkShortcut)
+            input = this.parseShortcut(input);
+
         const matches = [...input.matchAll(regex)];
 
         matches.forEach((match) => {
             if (result.command === '') {
                 // The first match is the command
-                result.command = match[0];
-            } else if (match[3] && match[4]) {
+                result.command = checkAlias ? this.getOriginalCommand(match[0]) : match[0];
+            }
+            else if (match[3] && match[4]) {
                 // Named option with value (e.g., --key=value)
                 result.options[match[3]] = match[4];
-            } else if (match[5]) {
+            }
+            else if (match[5]) {
                 // Named option without value (e.g., --all)
                 result.options[match[5]] = true;
-            } else if (match[6]) {
+            }
+            else if (match[6]) {
                 // Single character option (e.g., -a)
                 result.options[match[6]] = true;
-            } else if (match[1] || match[2]) {
+            }
+            else if (match[1] || match[2]) {
                 // Quoted argument (e.g., "arg with spaces")
                 result.args.push(match[1] || match[2]);
-            } else if (match[7]) {
+            }
+            else if (match[7]) {
                 // Plain argument
                 result.args.push(match[7]);
             }
@@ -492,32 +627,39 @@ Examples: info databases
      * @example
      * // Assuming a command 'get' is defined and valid.
      * const [message, value, status, output] = SnowflakeCLI.exec('get key1 key2');
-     * console.log(message, value, status, output); // "Found 2 entries", { "key1": "value1", "key2": "value2" }, 0, true
+     * console.log(message, value, status, output); // "Found 2 entries", { "key1": "value1", "key2": "value2" }, 0,
+     *     true
      *
      * @param {string} input - The input command-line string to be executed.
-     * @param {SnowflakeShell|null} [shell=null] - The shell instance where the command is to be executed, if applicable.
+     * @param {SnowflakeShell|null} [shell=null] - The shell instance where the command is to be executed, if
+     *     applicable.
+     * @param {boolean} checkAlias - Whether to look for commands alias
+     * @param {boolean} checkShortcut - Whether to look shortcuts for command
      *
      * @return {Array} - Returns an array with four elements:
      *   - `message` (string): The result message of the command execution.
      *   - `value` (any): The result value from the command execution, or `null`.
-     *   - `status` (number): A status code indicating success (0) or various errors (e.g., 3 for command not found, 4 for validation failure, 5 for execution errors). See Snowflake.getStatus() for more details.
-     *   - `output` (any): Whether you want to print the value inside shell. Unless you're using JSON mode in CLI, you may need this, expected values: true or false
+     *   - `status` (number): A status code indicating success (0) or various errors (e.g., 3 for command not found, 4
+     *     for validation failure, 5 for execution errors). See Snowflake.getStatus() for more details.
+     *   - `output` (any): Whether you want to print the value inside shell. Unless you're using JSON mode in CLI, you
+     *     may need this, expected values: true or false
      *
      * @since 1.0.0
      */
-    exec(input, shell = null) {
+    exec(input, shell = null, checkAlias = true, checkShortcut = true) {
         let message = "", value = null,
             status = 0, output = null;
         try {
-            const command_data = this.parseCommand(input);
-            const { command, args, options } = command_data;
+            const command_data = this.parseCommand(input, checkAlias, checkShortcut);
+            const {command, args, options} = command_data;
             if (!command || typeof this.#commands[command] !== "object")
                 return ["Command not found", null, 3, null]; // message, value, status_code, output
-            const { validate, exec } = this.#commands[command];
+            const {validate, exec} = this.#commands[command];
             if (typeof validate === "function" && !validate(command_data, shell)) {
                 message = `command is not valid\ntry: 'help ${command}'\n`;
                 status = 4;
-            } else if (typeof exec === "function") {
+            }
+            else if (typeof exec === "function") {
                 try {
                     const response = exec(command_data, shell);
                     if (Array.isArray(response))
@@ -556,7 +698,8 @@ Examples: info databases
                 this.#lockdown = JSON.parse(content);
                 this.#updateLockdown();
             }
-        } catch (e) {}
+        } catch (e) {
+        }
 
         this.#configs.log_connections = Snowflake.yaml.isTrue("logs.save_cli_connections");
         this.#configs.log_logins = Snowflake.yaml.isTrue("logs.save_cli_logins");
@@ -591,7 +734,7 @@ Examples: info databases
 
             Snowflake.logger.log(`%orange%[CLI]%reset% Client %underline%${shell.uuid}%reset% disconnected.`);
             if (this.#configs.log_connections) {
-                const log = `[${Snowflake.logger.get_time()}] [LEAVE], Client '${shell.uuid}' disconnected.` + "\n";
+                const log = `[${Snowflake.logger.getTime()}] [LEAVE], Client '${shell.uuid}' disconnected.` + "\n";
                 Snowflake.logger.logFile(log, "connections", true);
             }
         });
@@ -601,7 +744,7 @@ Examples: info databases
              * @type {SnowflakeShell}
              */
             const shell = args.shell;
-            const { success, token, cause } = args;
+            const {success, token, cause} = args;
             if (this.#configs.max_login_attempt > 0) {
                 if (!success) {
                     const subject = this.#configs.lockdown === "ip" ? shell.socket.remoteAddress : token;
@@ -611,12 +754,12 @@ Examples: info databases
                         this.#lockdown[subject]["time"] = Snowflake.now(false) + this.#configs.cooldown * 1000;
                         this.#lockdown[subject]["attempts"] = (this.#lockdown[subject]?.attempts || 0) + 1;
                     }
-                    if(cause === "lockdown")
+                    if (cause === "lockdown")
                         this.#updateLockdown();
                 }
             }
             if (this.#configs.log_logins) {
-                const log = `[${Snowflake.logger.get_time()}] ${success ? "Succeed" : "Failed"}, ` +
+                const log = `[${Snowflake.logger.getTime()}] ${success ? "Succeed" : "Failed"}, ` +
                     `Token: '${token}', IP: ${shell.socket.remoteAddress || "N/A"}${cause ? `, Cause: ${cause}` : ""}` +
                     `, UUID: ${shell.uuid}` + "\n";
                 Snowflake.logger.logFile(log, "logins", true);
@@ -624,7 +767,7 @@ Examples: info databases
         });
 
         SnowflakeEvents.on("cli_server_shell_authorized", args => {
-            const { token } = args;
+            const {token} = args;
             if (this.#sessions.has(token))
                 this.#sessions.set(token, this.#sessions.get(token) + 1);
             else
@@ -647,7 +790,7 @@ Examples: info databases
             Snowflake.logger.log(`%blue%[CLI]%reset% Client connected with UUID %underline%${uuid}`);
 
             if (this.#configs.log_connections) {
-                const log = `[${Snowflake.logger.get_time()}] [JOIN], Client connected with UUID '${uuid}', IP: ${shell.socket.remoteAddress || "N/A"}` + "\n";
+                const log = `[${Snowflake.logger.getTime()}] [JOIN], Client connected with UUID '${uuid}', IP: ${shell.socket.remoteAddress || "N/A"}` + "\n";
                 Snowflake.logger.logFile(log, "connections", true);
             }
 

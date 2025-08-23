@@ -16,10 +16,10 @@ const SnowflakeLogger = (function(){
 
         const _this = this;
 
-        let main_path = path.join(process.cwd(), "logs");
+        let mainPath = path.join(process.cwd(), "logs");
 
-        if(!fs.existsSync(main_path))
-            fs.mkdirSync(main_path);
+        if(!fs.existsSync(mainPath))
+            fs.mkdirSync(mainPath);
 
         let _config = Object.assign({
             "enabled": false,
@@ -33,14 +33,14 @@ const SnowflakeLogger = (function(){
          * @type {string}
          * @since 1.0.0
          */
-        const escape_key = "\x1b";
+        const escapeKey = "\x1b";
 
         /**
          * ANSI reset attribute
          * @type {string}
          * @since 1.0.0
          */
-        this.closure = `${escape_key}[0m`;
+        this.closure = `${escapeKey}[0m`;
 
         /**
          * Request to clear the terminal
@@ -51,23 +51,41 @@ const SnowflakeLogger = (function(){
 
         /**
          * ANSI color codes
-         * @type {{magenta: string, green: string, underline: string, yellow: string, clear: string, cyan: string, red: string, orange: string, blue: string, white: string, warning: string, reset: string, faint: string}}
+         * @type {{magenta: string, green: string, underline: string, yellow: string, clear: string, cyan: string, red:
+         *     string, orange: string, blue: string, white: string, warning: string, reset: string, faint: string}}
          * @since 1.0.0
          */
         this.colors = {
-            "red": `${escape_key}[31m`,
-            "green": `${escape_key}[32m`,
-            "blue": `${escape_key}[34m`,
-            "cyan": `${escape_key}[36m`,
-            "yellow": `${escape_key}[33m`,
-            "orange": `${escape_key}[38;5;214m`,
-            "magenta": `${escape_key}[35m`,
-            "white": `${escape_key}[39m`,
-            "warning": `${escape_key}[38;5;220m`,
-            "reset": `${escape_key}[0m`,
-            "underline": `${escape_key}[4m`,
-            "faint": `${escape_key}[2m`,
+            "red": `${escapeKey}[31m`,
+            "green": `${escapeKey}[32m`,
+            "blue": `${escapeKey}[34m`,
+            "cyan": `${escapeKey}[36m`,
+            "yellow": `${escapeKey}[33m`,
+            "orange": `${escapeKey}[38;5;214m`,
+            "magenta": `${escapeKey}[35m`,
+            "white": `${escapeKey}[39m`,
+            "warning": `${escapeKey}[38;5;220m`,
+            "reset": `${escapeKey}[0m`,
+            "underline": `${escapeKey}[4m`,
+            "no_underline": `${escapeKey}[24m`,
+            "faint": `${escapeKey}[2m`,
             "clear": _this.closure,
+        }
+
+        /**
+         * Special characters with colors
+         * @type {{check: string, coloredCheck: string, x: string, coloredX: string}}
+         * @since 1.0.0
+         */
+        this.characters = {
+            check: "✓",
+            coloredCheck: "%green%✓%green%%reset%",
+            x: "🗴",
+            coloredX: "%red%🗴%red%%reset%",
+            info: "ℹ",
+            infoColored: "%blue%ℹ%blue%%reset%",
+            warning: "ℹ",
+            warningColored: "%orange%ℹ%orange%%reset%",
         }
 
         /**
@@ -79,7 +97,7 @@ const SnowflakeLogger = (function(){
          * Formatted time
          * @since 1.0.0
          */
-        this.get_time = (format=null) => {
+        this.getTime = (format=null) => {
             if(!format)
                 format = _config.time_format;
             if(format){
@@ -104,20 +122,46 @@ const SnowflakeLogger = (function(){
          * ANSI color code
          * @since 1.0.0
          */
-        this.get_color = (color, force=false) => {
+        this.getColor = (color, force=false) => {
             let c = _this.colors[color] || "";
             if(!_config.use_colors && !force)
                 return _this.colors.reset;
             return c;
         }
 
-        this.format_color = (text, clean = false) => {
-            return text.toString().replace(/(%(red|green|orange|blue|cyan|yellow|magenta|white|warning|reset|clear|underline|faint)%)/ig, function(match, content, input, offset){
+        // Color regex for replacing percent-escaped codes with ANSI codes
+        const colorRegex = /(%(red|green|orange|blue|cyan|yellow|magenta|white|warning|reset|clear|underline|no_underline|faint)%)/ig;
+
+        /**
+         * Format ANSI colors inside a string, colors are percent-escaped like: "%red%", "%green%", "%blue%"
+         * @param {string} text - Original text containing escaped colors
+         * @param {boolean} clean - Whether to replace the escaped colors with ANSI color code or just remove them
+         * @return {string} - Formatted string with ANSI color codes
+         * @sicne 1.0.0
+         */
+        this.formatColor = (text, clean = false) => {
+            return text.toString().replace(colorRegex, function(match, content, input){
                 if(clean)
                     return "";
-                let color = _this.get_color(input);
+                let color = _this.getColor(input);
                 return color ? color : match;
             });
+        }
+
+        // Regex to match %char:someKey%
+        const charRegex = /%char:([a-zA-Z0-9_]+)%/g;
+
+        this.formatChars = (text, formatColors = false, clean = false) => {
+
+            return text.toString().replace(charRegex, (_, key) => {
+                if(clean)
+                    return "";
+                const icon = this.characters?.[key] ?? "";
+                if(icon)
+                    return formatColors ? this.formatColor(icon) : icon;
+                return "";
+            });
+
         }
 
         /**
@@ -132,10 +176,10 @@ const SnowflakeLogger = (function(){
         this.log = (text, show_time=true) => {
             if(!_config.enabled)
                 return this;
-            let str = this.format_color(text);
+            let str = this.formatColor(text);
             let prefix = [];
             if(show_time && _config.show_time)
-                prefix.push("[" + _this.get_time() + "]");
+                prefix.push("[" + _this.getTime() + "]");
             str = Snowflake.inject(str, str.startsWith("\n") ? 1 : 0, prefix.join("") + " ");
             console.log(str.trim() + _this.colors.clear);
             return this;
@@ -154,34 +198,75 @@ const SnowflakeLogger = (function(){
         }
 
         /**
+         * Remove ANSI characters
+         * @param {string} str
+         * @return {*}
+         * @since 1.0.0
+         */
+        this.stripAnsiCodes = str => str.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '');
+
+        /**
          * Print a table
-         * @param {object[]} table - Table items list
+         * @param {{key: string, value: any, color: string}[]} table - Table items list
          * @param {number} indent - The number of indents at the beginning of each entry
          * @param {string} color - The default color of the table
          * @param {string} spacer - The default spacer for spacing key and value
-         * @param {number} space_offset - Offset to be added to the spacer number
+         * @param {number} spaceOffset - Offset to be added to the spacer number
          * @param {boolean} log - Whether to log the text, default is true
          * @return {string} - Table text
          * @since 1.0.0
          */
-        this.table = (table, indent = 3, color = "clear", spacer = " ", space_offset = 0, log = true) => {
+        this.table = (table, indent = 3, color = "clear", spacer = " ", spaceOffset = 0, log = true) => {
+
             indent = Math.max(indent, 0);
-            let space = 1;
+
+            let space = 1, maxValueLength = 0;
             let text = "";
+
             for(let t of table){
-                let {key} = t;
-                key = key.replaceAll(/%\w+%/g, "");
+
+                let {key, value} = t;
+
+                // Remove percent-escaped color codes (e.g: %red% %green% %clear%)
+                key = String(key).replaceAll(/%\w+%/g, "");
+                value = String(value).replaceAll(/%\w+%/g, "");
+
+                // Calculate the maximum length of the rows
                 space = Math.max(space, key.length+1);
+                maxValueLength = Math.max(maxValueLength, value.length+1);
             }
+
             for(let t of table){
-                let {key, value, color: c} = t;
-                let clean_key = key.replaceAll(/%\w+%/g, "");
-                c = c || color;
-                const padding = indent + clean_key.length + space - clean_key.length + 2;
-                text += `%${c}%${" ".repeat(indent)}${key} ${spacer.repeat(space-clean_key.length+space_offset)} ${String(value).replaceAll("%padding%", " ".repeat(padding+space_offset))}\n`;
+
+                // Deconstruct table row properties
+                const {key, value, divider} = t;
+                let c = t.color || color;
+
+                // Clean the key by removing percent-escaped color codes (e.g: %red% %green% %clear%)
+                let cleanKey = key.replaceAll(/%\w+%/g, "");
+
+                // Calculate the length without ANSI codes
+                const keyLength = cleanKey.toString().length;
+
+                // Space that needs to be added to the end of the row
+                const padding = indent + keyLength + space - keyLength + 2;
+
+                // Cleanup the value
+                const parsedValue = this.formatColor(String(value).replaceAll("%padding%", " ".repeat(padding+spaceOffset)));
+
+                // Append the string
+                const _color = c;
+                const _key = (divider ? "── " : "") + cleanKey;
+                const _indent = " ".repeat(indent);
+                const _spacer = (divider ? "─" : spacer).repeat(space-keyLength+spaceOffset + (divider ? (maxValueLength-3) : 0));
+                const _value = divider ? "" : parsedValue.replaceAll("\n", "\n" + " ".repeat(space+spaceOffset+2));
+                text += this.formatColor(`%${_color}%${_indent}${_key} ${_spacer} ${_value}%clear%\n`);
+
             }
+
             if(log)
                 this.log(text);
+
             return text;
         }
 
@@ -196,20 +281,22 @@ const SnowflakeLogger = (function(){
         this.box = (title, content, borders=null) => {
             if(!borders || borders.length < 6)
                 borders = "╭─╮╯╰│";
+
             const lines = content.split("\n");
-            const maxLineLength = Math.max(title.length, ...lines.map(line => line.length));
+            const maxLineLength = Math.max(title.length, ...lines.map(line => this.stripAnsiCodes(line.toString()).length));
             const boxWidth = maxLineLength + 1; // Add padding
 
             const topBorder = `${borders[0]} ${title} ${borders[1].repeat(boxWidth - title.length - 1)}` + borders[2];
             const bottomBorder = `${borders[4]}${borders[1].repeat(boxWidth + 1)}${borders[3]}`;
 
             const paddedLines = lines.map(line => {
-                const padding = ' '.repeat(boxWidth - line.length);
+                const cleanLine = this.stripAnsiCodes(line.toString());
+                const padding = ' '.repeat(boxWidth - cleanLine.length);
                 return `${borders[5]} ${line}${padding}${borders[5]}`;
             });
 
             return [topBorder, ...paddedLines, bottomBorder].join('\n');
-        };
+        }
 
         /**
          * Log a message into a file inside logs directory located in configs.yaml,
@@ -225,7 +312,7 @@ const SnowflakeLogger = (function(){
                 const t = new Date().getTime().toString(),
                     time = parseInt(t.substring(0, t.length-3)).toString(),
                     file = (name || time) + ".log",
-                    p = path.join(main_path, file);
+                    p = path.join(mainPath, file);
                 if(append)
                     fs.appendFileSync(p, content);
                 else
@@ -246,8 +333,10 @@ const SnowflakeLogger = (function(){
          * @since 1.0.0
          */
         this.assert = (text, exit=1, mark=false) => {
-            if(_config.enabled)
+            if(_config.enabled) {
                 this.error(text, mark);
+                this.logFile(this.formatColor(text, true), `Fatal ${new Date().toUTCString()}`);
+            }
             if(exit !== false && exit >= 0)
                 process.exit(exit);
             return this;

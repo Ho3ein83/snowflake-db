@@ -1,9 +1,8 @@
-![Beta](https://img.shields.io/badge/pre_release-pink)
-![SnowflakeDB](https://img.shields.io/badge/snowflake-db-purple)
-![Project Status: Incomplete](https://img.shields.io/badge/status-incomplete-red)
-![Coverage](https://img.shields.io/badge/covergage-50%25-blue)
+![Beta](https://img.shields.io/badge/Pre_Release-pink)
+![SnowflakeDB](https://img.shields.io/badge/Snowflake-DB-purple)
+![Project Status: In progress](https://img.shields.io/badge/Status-In_progress-orange)
 
-<h3 align="center"><img width="800" style="border-radius:5px;" alt="thumbnail" src="https://repository-images.githubusercontent.com/994282365/e394cd38-f9d2-4825-9ccb-dae7400b46e0"></h3>
+<img width="800" style="border-radius:5px;" alt="thumbnail" src="https://repository-images.githubusercontent.com/994282365/e394cd38-f9d2-4825-9ccb-dae7400b46e0">
 
 <!-- TOC -->
 * [SnowflakeDB - Introduction](#snowflakedb---introduction)
@@ -13,8 +12,8 @@
     * [3. Run the program](#3-run-the-program)
     * [Change the configuration (optional):](#change-the-configuration-optional)
     * [Use the program as module](#use-the-program-as-module)
-  * [Benchmark (for database with only 1 entry)](#benchmark-for-database-with-only-1-entry)
-    * [Data manipulation](#data-manipulation)
+  * [Benchmark](#benchmark)
+    * [Data manipulation (with memory monitor and encryption on)](#data-manipulation-with-memory-monitor-and-encryption-on)
     * [Performance](#performance)
   * [How does it work?](#how-does-it-work)
   * [Why should I use this one?](#why-should-i-use-this-one)
@@ -28,9 +27,16 @@
     * [Database files (MEIDs)](#database-files-meids)
     * [Key files](#key-files)
     * [TCP shell](#tcp-shell)
+    * [Encryption](#encryption)
+      * [Using custom encryption key **(optional)**](#using-custom-encryption-key-optional)
+    * [How does an encrypted entry look like?](#how-does-an-encrypted-entry-look-like)
+    * [Disable the encryption](#disable-the-encryption)
     * [Attributes](#attributes)
     * [Internal commands](#internal-commands)
     * [Database commands](#database-commands)
+    * [Backup files or AOL (Append Only List)](#backup-files-or-aol-append-only-list)
+      * [Other aliases:](#other-aliases)
+      * [Programming - Backup files encoding / decoding:](#programming---backup-files-encoding--decoding)
   * [Contribution](#contribution)
   * [Copyright](#copyright)
   * [License](#license)
@@ -41,10 +47,11 @@ SnowflakeDB is an advanced in-memory database system inspired by Redis.
 With SnowflakeDB, you can create a database inside your machine's RAM, which improves read and write operations on your application.
 
 ## How to install?
-At this moment, this project is not final and needs more time to be ready. If you want to test it, follow this instruction:
+Currently, this project works as it should, and we expect it to work without any problem, however it can still be better than it is now.
+To install it, follow this instruction:
 
 ### 1. Open the project
-Run the following command or download the repository as zip:<br/>
+Run the following command or download it manually:<br/>
 ```bash
 git clone https://github.com/Ho3ein83/snowflake-db
 ```
@@ -64,7 +71,7 @@ After installing required dependencies, run the project using the following comm
 ```bash
 node index.js
 ```
-<br/>
+
 Now you can access the database using TCP shell or use shared method to use it inside your project.
 
 ### Change the configuration (optional):
@@ -102,16 +109,16 @@ In our case, the project was located inside the snowflake-db directory, so the m
 
 **Note:** there is no persistent system implemented in beta version, so your data **will be lost** when terminating the program.
 
-## Benchmark (for database with only 1 entry)
+## Benchmark
 
 This benchmark was done using two methods of database access: the first was a TCP shell, which allows you to manage the database via a TCP connection; the second used shared memory by integrating this project directly into your own.<br/>
 Both were calculated using the same data and measurement methods on the same device.
 
-### Data manipulation
+### Data manipulation (with memory monitor and encryption on)
 |   Method    |   Set    |  Update  |  Delete  |   Get    | Sanitize (key) | Sanitize (value) |
 |:-----------:|:--------:|:--------:|:--------:|:--------:|:--------------:|:----------------:|
-|  TCP Shell  | 1.561 ms | 0.265 ms | 0.447 ms | 0.559 ms |    0.161 ms    |     0.119 ms     |
-|   Shared    | 0.097 ms | 0.022 ms | 0.026 ms | 0.049 ms |    0.047 ms    |     0.002 ms     |
+|  TCP Shell  | 1.253 ms | 0.395 ms | 0.588 ms | 0.141 ms |    0.142 ms    |     0.175 ms     |
+|   Shared    | 0.230 ms | 0.717 ms | 0.203 ms | 0.072 ms |    0.026 ms    |     0.005 ms     |
 
 ### Performance
 |               Test                | Execution time | 
@@ -271,6 +278,39 @@ When you open a key file (with the `.sfk` extension), you’ll see a similar str
 The TCP shell is a simulated terminal with an authentication system. It uses ANSI codes to display colored text. It uses a simple command parser to handle commands effectively.<br/>
 You can also disable the TCP shell or change its port if needed, also possible to integrate your own commands into it.
 
+### Encryption
+You can encrypt your database to make it unreadable without having the encryption key.
+1. For start enable `meids.encrypt` from config file.
+2. Now change `meids.encryption_cypher` to a safe path for encryption key, by default it's set to `./db/snowflake.sfx` (not recommended to use this path in production).
+
+**Note:** since `snowflake.sfx` file is a binary, you can name it whatever you want, for example you can use `family-picture.png` as the encryption key file as long as the content is a valid key. 
+
+#### Using custom encryption key **(optional)**
+To use a custom encryption key, create a new file at the path specified by `encryption_cipher` and place a 32-character string inside it. If no file is provided, a random key will be generated automatically.
+
+Now after running the database a binary file will be generated automatically in the given path containing your encryption key. Here is what the file looks like:
+```text
+00 01 02 39 64 65 30 65 36 39 65 00 00 00 00 00
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+65 76 39 56 6E 75 4A 4D 74 56 44 35 77 6C 6D 4D
+52 66 69 78 4E 66 61 32 77 64 4E 43 7A 79 4D 58
+```
+
+The first 32-byte is the header and the next 32-byte represents the encryption key.
+
+### How does an encrypted entry look like?
+When encrypting the database, each entry value will be encrypted without touching the hash or even changing the size.
+
+Here is how does an encrypted database look like using `AES-256-CTR` algorithm:
+<img width="800" style="border-radius:5px;" alt="thumbnail" src="https://amatris.ir/cdn/images/snowflake-db-data-encryption-hexdump.png">
+
+### Disable the encryption
+If you have your data encrypted, and now you need to disable the encryption, set both `meids.encrypt` and `meids.recover` to `true`, then restart your app to see this message:
+```text
+[DATABASE] Database files were recovered, you can disable 'meids.recover' by setting it to 'false' in 'configs.yaml' file.
+```
+set both `meids.encrypt` and `meids.recover` to `false` and restart the app, now all of your database files will be decrypted.
+
 ### Attributes
 You can use `@echo` and `@json` attributes to set the mode of the current connection. If you’re building a web interface for your database, you should send `@json` attribute immediately after authentication is completed.<br/>
 For CLI don't change the attribute or send `@echo` to change it back to CLI mode.
@@ -291,19 +331,18 @@ To see how long a command takes to execute, enable the timing attribute by sendi
 
 ### Internal commands
 ```
-╭ help ───────────────────────────────────────────────────────────╮
-│ Get the list of existing commands with usage                    │
-│ Usage: help [?COMMANDS]                                         │
-│     [COMMANDS]:                                                 │
-│         * Optional                                              │
-│         * Space separated commands you want to know more about. │
-│ Examples: help                                                  │
-│           help command1                                         │
-│           help command1 command2                                │
-│           help clear get set                                    │
-╰─────────────────────────────────────────────────────────────────╯
+╭ help ───────────────────────────────────────────────────────────────────╮
+│ Get the list of existing commands with usage                            │
+│ Usage: help [?COMMANDS]                                                 │
+│     [COMMANDS]:                                                         │
+│         * Optional                                                      │
+│         * Space separated commands you want to know more about.         │
+│ Examples: help                                                          │
+│           help command1                                                 │
+│           help command1 command2                                        │
+│           help clear get set                                            │
+╰─────────────────────────────────────────────────────────────────────────╯
 ```
-
 ```
 ╭ clear ──────────────────────────────────╮
 │ Clears your screen if this is possible. │
@@ -323,33 +362,61 @@ To see how long a command takes to execute, enable the timing attribute by sendi
 ╰─────────────────────────────────────────────────────────────────────────╯
 ```
 ```
-╭ info [FILTERS] ────────────────────────────────────────────────────╮
-│ Get all the information about the running application.             │
-│ Usage: info [?FILTERS]                                             │
-│     [FILTERS]:                                                     │
-│         * Optionals                                                │
-│         * Default value: "all"                                     │
-│         * Options: "database" | "db", "app", "server", "all" | "*" │
-│                                                                    │
-│ Examples: info databases                                           │
-│           info db                                                  │
-│           info app server                                          │
-╰────────────────────────────────────────────────────────────────────╯
+╭ shutdown [?EXIT_CODE] ────────────────────────────────────────────╮
+│ Shutdown the process and offload                                  │
+│ the database from memory.                                         │
+│ Usage: shutdown [?EXIT_CODE]                                      │
+│     [EXIT_CODE]:                                                  │
+│     * Optional                                                    │
+│     * Description: The exit code of the process, the default is 0 │
+│                                                                   │
+│ Examples: shutdown                                                │
+│           shutdown 1                                              │
+╰───────────────────────────────────────────────────────────────────╯
+```
+```
+╭ info [FILTERS] ─────────────────────────────────────────────────────────────────────────────────────────╮
+│ Get all the information about the running application.                                                  │
+│ Usage: info [?FILTERS]                                                                                  │
+│     [FILTERS]:                                                                                          │
+│         * Optionals                                                                                     │
+│         * Default value: "all"                                                                          │
+│         * Options: "database" or "db", "persistent", "memory" or "mem", "app", "server", "all" or "*"   │
+│                                                                                                         │
+│ Examples: info databases                                                                                │
+│           info db                                                                                       │
+│           info app server                                                                               │
+│           info persistent                                                                               │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 Output of the `info` command:
 ```
-╭ Info ────────────────────╮
-│ Uptime ----------- 15:37 │
-│ Webserver port --- 6401  │
-│ CLI port --------- 6402  │
-│ Version name ----- 1.0.0 │
-│ Version code ----- 1     │
-│ Memory monitor --- Yes   │
-│ Max memory ------- 10MB  │
-│ MEID version ----- 1     │
-│ MEIDs count ------ 1     │
-│ MEIDs encryption - No    │
-╰──────────────────────────╯
+╭ Now ──────────────────────────╮
+│ Sat, 23 Aug 2025 11:49:18 GMT │
+╰───────────────────────────────╯
+╭ Info ──────────────────────────────────╮
+│ ── Server ───────────────────────────  │
+│ Uptime --------------- 10:41           │
+│ Webserver Port ------- 6401            │
+│ CLI Port ------------- 6402            │
+│ Heap Total ----------- 11.93 MB        │
+│ Heap Used ------------ 10.70 MB        │
+│ ── Application ──────────────────────  │
+│ Version Name --------- 1.0.0           │
+│ Version Code --------- 1               │
+│ ── Memory ───────────────────────────  │
+│ Monitor -------------- Enabled         │
+│ Max Memory ----------- 10.00 KB        │
+│ Used Memory ---------- 43 B (0.43%)    │
+│ ── Database ─────────────────────────  │
+│ MEID Version --------- 1               │
+│ MEIDs Count ---------- 1               │
+│ MEIDs Encryption ----- Enabled         │
+│ Last Reload ---------- 10 minutes ago  │
+│ ── Persistent ───────────────────────  │
+│ Persistent Status ---- Saved           │
+│ Last Persistent Call - 10 minutes ago  │
+╰────────────────────────────────────────╯
 ```
 
 ### Database commands
@@ -409,6 +476,39 @@ Output of the `info` command:
 ╰────────────────────────────────────────────────────────────╯
 ```
 ```
+ list [?PAGE] [?OPTIONS] ────────────────────────────────────────────────╮
+│ List existing entries in memory. The list is                            │
+│ paginated and shows a limited amount of entries.                        │
+│ Alias: ls                                                               │
+│ Usage: list [?PAGE] [?OPTIONS]                                          │
+│     [PAGE]:                                                             │
+│     * Optional                                                          │
+│     * Description: The number of current page (default is 1)            │
+│                                                                         │
+│     [OPTIONS]:                                                          │
+│     * Optional                                                          │
+│     * Options: --limit: The amount of entry limit of each page,         │
+│                         default is 30. Pass -1 for unlimited.           │
+│                --type: Filter out the entries by their type.            │
+│                        The allowed types are: "number", "string",       │
+│                        "bool" / "boolean", "object", "array",           │
+│                        "buffer" / "bin", "all" / "*" (default).         │
+│                        You can also pass multiple types by              │
+│                        separating them with comma.                      │
+│                --scope: Set the scope for data lookup, the              │
+│                         allowed values are: "key", "value", "trash",    │
+│                         "pair" (default, both key and value)            │
+│                                                                         │
+│ Examples: list                                                          │
+│           list 2                                                        │
+│           list --limit=10                                               │
+│           list 2 --limit=10                                             │
+│           list --type=string                                            │
+│           list --scope=key                                              │
+│           list --type=buffer,string,array                               │
+╰─────────────────────────────────────────────────────────────────────────╯
+```
+```
 ╭ sanitize [TYPE] [INPUT] ────────────────────────────────────────────╮
 │ Sanitize a key or value.                                            │
 │ Usage: sanitize [TYPE] [INPUT] [?OPTIONS]                           │
@@ -431,6 +531,124 @@ Output of the `info` command:
 │           sanitize value "My value"                                 │
 │           sanitize Value value                                      │
 ╰─────────────────────────────────────────────────────────────────────╯
+```
+```
+╭ truncate [INDEX] [CONFIRM] ─────────────────────────────────────────╮
+│ Truncate the database or just a specific one.                       │
+│ Note that it will regenerate the headers for each file after        │
+│ truncating. Also you need to reload the database after truncating   │
+│ to keep it up to date.                                              │
+│ If the database index is not loaded, won't be truncated.            │
+│ Usage: truncate [INDEX] [CONFIRM] [?OPTIONS]                        │
+│     [INDEX]:                                                        │
+│     * Required                                                      │
+│     * Description: The index of the database file to be truncated,  │
+│                    starting from 0.                                 │
+│                    Also you can set it to "all" to truncate all the │
+│                    database files that was loaded.                  │
+│                    Can be a comma separated string, for example     │
+│                    "0,4" will truncate 0 and 4 database files.      │
+│                                                                     │
+│    [INDEX]:                                                         │
+│     * Required                                                      │
+│     * Description: The confirmation of the truncation, must be      │
+│                    either "1" or "confirm" string.                  │
+│                                                                     │
+│ Examples: truncate 0 confirm                                        │
+│           truncate all confirm                                      │
+│           truncate 1,2,3 confirm                                    │
+│           truncate "1, 2, 3" confirm                                │
+╰─────────────────────────────────────────────────────────────────────╯
+```
+```
+╭ reload [?OPTIONS] ────────────────────────────────────────────────────╮
+│ Reload the database files.                                            │
+│ Run this command after truncating or changing the                     │
+│ database files.                                                       │
+│ Usage: reload [?OPTIONS]                                              │
+│     [OPTIONS]:                                                        │
+│     * Optional                                                        │
+│     * Options: --no-backup: Omit the backup files restoration and     │
+│                             just reload the database files. If not    │
+│                             present, backups will be restored first.  │
+│                --delete-backups: Delete every unhandled backup files. │
+│                                                                       │
+│ Examples: reload                                                      │
+│           reload --no-backup                                          │
+│           reload --delete-backups                                     │
+╰───────────────────────────────────────────────────────────────────────╯
+```
+```
+╭ persist ───────────────────────────────────╮
+│ Takes a snapshot from the current database │
+│ and stores it in the database files.       │
+│ Alias: persist                             │
+│ Usage: persist                             │
+│                                            │
+│ Examples: persist                          │
+╰────────────────────────────────────────────╯
+```
+
+### Backup files or AOL (Append Only List)
+Instead of updating the whole database on every change, SnowflakeDB keeps the track of them in separate files, then they will be restored during the initialization and cleanup steps.
+Backup files are located in `snowflake-db/db` directory by default, if you open one of them you may see something like this:
+```text
+banana<2
+apple<pineapple<1
+#banana
+#pineapple
+watermelon<T
+strawberry<N
+```
+In the first line, `banana<2` means it should add a key named `banana` and set its value to integer `2`.<br/>
+On the line below that, `apple<pineapple<1` means both `apple` and `pineapple` keys have the same value, which is integer `1`. This can be very efficient for large duplicated data.<br/>
+When a key is started with `#` it means that key should be removed at this point.<br/>
+`watermelon<T` is the same as before, but `T` is an alias for `true`, it takes 3 bytes less storage, and it's simpler to read.<br/>
+Strings are quoted with double quotations in the backup files to prevent conflict with aliases:
+```text
+name<"Hossein"
+; Don't get aliases mistaken for strings 👇
+string<"T"
+boolean<T
+```
+#### Other aliases:
+- `N` or `n` 👉 `null`
+- `T` or `t` 👉 ```true```
+- `F` or `f` 👉 ```false```
+
+#### Programming - Backup files encoding / decoding:
+Import the AOL module first:
+```js
+const SnowflakeAol = require("./src/core/SnowflakeAol");
+```
+To encode a new set, use `encodeSets` method:
+```js
+const sets = SnowflakeAol.encodeSets({
+    money: 20,
+    age: 20,
+    color: "white",
+    job: false,
+    skills: ["PHP", "JS"],
+    car: null
+});
+```
+Now `sets` value will be:
+```text
+money<age<20
+color<"white"
+job<F
+skills<["PHP","JS"]
+car<N
+```
+To encode the removal items, use `encodeRemoval` method:
+```js
+const removals = SnowflakeAol.encodeRemoval(["money", "car", "job"]);
+```
+The output will be:
+```text
+#money
+#car
+#job
 ```
 
 ## Contribution

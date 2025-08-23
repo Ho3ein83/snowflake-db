@@ -4,6 +4,9 @@
   "version_code": 1,
   "meid_version": 1,
   "signature": "Qb4SD6xF",
+  "encryption_salt": "bb37a884e8bec4b0025ce6bcc02ac2d4",
+  "is_development": true,
+  "log_connections": true,
   "access_keys": {
     "": {
       "alias": "SnowflakeDB",

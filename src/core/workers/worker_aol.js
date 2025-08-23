@@ -1,31 +1,38 @@
 const SnowflakeAol = require("../SnowflakeAol");
-const { parentPort, workerData } = require('worker_threads');
-const { database_path, permission } = workerData;
+const { parentPort, workerData } = require("worker_threads");
+const Snowflake = require("../Snowflake");
+const { database_path, permission, maxBackupSize, backupInterval, megaBinary } = workerData;
 
 // Check database path
 if(!database_path)
     throw new Error("Database path given to backup worker is not valid or doesn't exist!");
 
 // Manage backup files
-const aol = new SnowflakeAol(database_path, permission);
+const aol = new SnowflakeAol({
+    databasePath: database_path,
+    permission: permission,
+    maxFileSize: maxBackupSize,
+    backupInterval: backupInterval,
+    megaBinaryMode: megaBinary
+});
 
 // Initialize the class as worker
 aol.worker();
 
 // Check if backup file is created and permissions are granted
-if(!aol.file_descriptor)
-    throw new Error(aol.last_error || "An error has occurred inside AOL (backup) worker!");
+if(!aol.currentFilename)
+    throw new Error(aol.lastError || "An error has occurred inside AOL (backup) worker!");
 
-function send(nonce, response, success){
-    parentPort.postMessage({ nonce, response, success });
+function send(nonce, response, success, requestId){
+    parentPort.postMessage({ nonce, response, success, requestId });
 }
 
-function send_success(response, nonce){
-    send(nonce, response, true);
+function send_success(response, nonce, requestId){
+    send(nonce, response, true, requestId);
 }
 
-function send_error(response, nonce){
-    send(nonce, response, false);
+function send_error(response, nonce, requestId){
+    send(nonce, response, false, requestId);
 }
 
 function blockForSeconds(seconds) {
@@ -41,19 +48,33 @@ function generateNonce() {
 }
 
 parentPort.on("message", data => {
-    let { action, nonce } = data;
+    let { action, nonce, requestId } = data;
     if(!nonce)
         nonce = generateNonce();
     if(action === "set"){
-        const { key, value } = data;
+        let { key, value } = data;
+        if(value instanceof Uint8Array)
+            value = Buffer.from(value);
         if(!key){
-            send_error(null, nonce);
+            send_error(null, nonce, requestId);
             return;
         }
         aol.add(key, value);
-        send_success(null, nonce);
+        send_success(null, nonce, requestId);
+    }
+    else if(action === "remove"){
+        let { key } = data;
+        if(!key){
+            send_error(null, nonce, requestId);
+            return;
+        }
+        aol.remove(key);
+        send_success(null, nonce, requestId);
+    }
+    else if(action === "ping"){
+        send_success(true, nonce, requestId);
     }
     else{
-        send_error(null, nonce);
+        send_error(null, nonce, requestId);
     }
 });

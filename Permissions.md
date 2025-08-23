@@ -1,0 +1,11 @@
+### Access token permission list
+
+| Access ID     | Access Title               | Access description                                                                                                                                                                                 |
+|---------------|----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| *             | All                        | Access to every feature and commands.                                                                                                                                                              |
+| control_panel | GUI web interface          | Access to web interface, other permissions might be required for further access to other options.                                                                                                  |
+| cp_database   | Control panel database     | Access to web interface database section, which can be used to read and write to the database, if you need to specify read and write permissions, add 'db_read' or 'db_write' to permissions list. |
+| db_read       | Database read access       | Access to read data from database using web interface and CLI.                                                                                                                                     |
+| db_write      | Database write access      | Access to set/update/delete data in database using web interface and CLI.                                                                                                                          |
+| db_stats      | Database statistics access | Allow to get the statistics information of the database, such as memory usage database configuration.                                                                                              |
+| change_config | Config file change access  | Allow to change the options allowed to use in `configs.yaml` file.                                                                                                                                 |

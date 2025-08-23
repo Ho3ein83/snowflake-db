@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8"/>
+    <link rel="icon" type="image/svg+xml" href="./snowflake-bg-dark.svg"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Control Panel - Snowflake Database</title>
+    <script>
+        window.SF_CONFIG = {
+            "prefix": "snowflake_",
+            "default_language": "en",
+            "default_theme_mode": "light",
+            // Just for development and debug
+            "render_logs": true,
+            // Token expiration in seconds, set it to 0 for no expiration (no recommended)
+            // Note: The expiration is only in your browser and after the token expired you can use it again the next time
+            // you want to log in. Also, if the token gets expired while using the app it won't shut you down and you
+            // can still do what you were doing, until you refresh the page and it'll ask you again for access token.
+            "access_key_expiration": 86400, // 1 day
+            // The lower the refresh interval is, the lower your server traffic will be, set it to 0 to disable auto-refreshing
+            "refresh_interval": {
+                "used_heap": 1000,
+                "type_analyze": 0
+            },
+            // Socket configuration, you can change/find it from 'configs.yaml' file in your database app.
+            "socket": {
+                "host": "localhost",
+                "port": 6401,
+                "secure": false,
+                "timeout": 15000
+            }
+        };
+    </script>
+  <script type="module" crossorigin src="./assets/index-4JtCxBBO.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DcLFrmgp.css">
+</head>
+<body>
+    <div id="root"></div>
+</body>
+</html>
