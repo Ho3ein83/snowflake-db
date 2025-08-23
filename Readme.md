@@ -237,6 +237,13 @@ Now you can enter any available command or run `help` to get the list of existin
 ## Configuration
 To change the database configuration, refer to the `configs.yaml` file, which is already documented within the file itself.
 
+## GUI web interface
+The built-in web interface allows you to manage your database data and statistics within a single web page.
+
+By installing this app, you get the web control panel too, but if you need to customize it or see the codes, you can always inspect the codes from [SnowflakeDB GUI repository](https://github.com/Ho3ein83/snowflake-db-gui/) and build them your own.
+
+<img width="800" style="border-radius:5px;" alt="thumbnail" src="https://amatris.ir/cdn/images/snowflake-db-gui-home.png?c=1">
+
 ## Learn more
 If you're interested in how this software works, read the following sections. You’re also welcome to explore the codes.
 
