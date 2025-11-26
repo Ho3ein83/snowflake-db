@@ -14,7 +14,12 @@
     * [Use the program as module](#use-the-program-as-module)
   * [Benchmark](#benchmark)
     * [Data manipulation (with memory monitor and encryption on)](#data-manipulation-with-memory-monitor-and-encryption-on)
-    * [Performance](#performance)
+    * [Data read (with memory monitor and encryption on)](#data-read-with-memory-monitor-and-encryption-on)
+    * [Data sanitization](#data-sanitization)
+    * [Database performance (large data - encryption off)](#database-performance-large-data---encryption-off)
+    * [Database performance (small data - encryption off)](#database-performance-small-data---encryption-off)
+    * [Database performance (small data - encryption on)](#database-performance-small-data---encryption-on)
+    * [Program performance](#program-performance)
   * [How does it work?](#how-does-it-work)
   * [Why should I use this one?](#why-should-i-use-this-one)
   * [How to use command line (TCP shell)?](#how-to-use-command-line-tcp-shell)
@@ -116,21 +121,59 @@ This benchmark was done using two methods of database access: the first was a TC
 Both were calculated using the same data and measurement methods on the same device.
 
 ### Data manipulation (with memory monitor and encryption on)
-|   Method    |   Set    |  Update  |  Delete  |   Get    | Sanitize (key) | Sanitize (value) |
-|:-----------:|:--------:|:--------:|:--------:|:--------:|:--------------:|:----------------:|
-|  TCP Shell  | 1.253 ms | 0.395 ms | 0.588 ms | 0.141 ms |    0.142 ms    |     0.175 ms     |
-|   Shared    | 0.230 ms | 0.717 ms | 0.203 ms | 0.072 ms |    0.026 ms    |     0.005 ms     |
+|   Method    | Set (1 entry) | Set (1,000 entries) |  Update  |  Delete  |
+|:-----------:|:-------------:|:-------------------:|:--------:|:--------:|
+|  TCP Shell  |   1.253 ms    |      23.030 ms      | 0.395 ms | 0.588 ms |
+|   Shared    |   0.230 ms    |      20.044 ms      | 0.717 ms | 0.203 ms |
 
-### Performance
-|               Test                | Execution time | 
-|:---------------------------------:|:--------------:|
-| Initialization for empty database |   13.331 ms    |
-|      Webserver and TCP start      |    2.266 ms    |
-|    CLI commands initialization    |    0.002 ms    |
-|         Parsing a command         |    0.565 ms    |
-|           Entry lookup            |    0.004 ms    |
+### Data read (with memory monitor and encryption on)
+|   Method    | Get - between 1 entry |      Get - between 2M entries       |
+|:-----------:|:---------------------:|:-----------------------------------:|
+|  TCP Shell  |       0.131 ms        |              0.224 ms               |
+|   Shared    |       0.072 ms        |              0.087 ms               |
+
+### Data sanitization
+|   Method    | Sanitize (key) | Sanitize (value) |
+|:-----------:|:--------------:|:----------------:|
+|  TCP Shell  |    0.142 ms    |     0.175 ms     |
+|   Shared    |    0.026 ms    |     0.005 ms     |
 
 TCP shell commands takes longer time to execute, because there are a few extra steps for TCP connection to allow the execution, such as authenticating and validations.
+
+### Database performance (large data - encryption off)
+|                    Test                     | Execution time |
+|:-------------------------------------------:|:--------------:|
+|    Startup time for empty database (0 B)    |   10.187 ms    |
+|   Startup time for 1,000 entries (138 KB)   |   26.197 ms    |
+|  Startup time for 10,000 entries (1.38 MB)  |   187.554 ms   |
+| Startup time for 1,000,000 entries (138 MB) |    5.677 s     |
+| Startup time for 2,000,000 entries (276 MB) |    11.623 s    |
+
+### Database performance (small data - encryption off)
+|                    Test                     | Execution time |
+|:-------------------------------------------:|:--------------:|
+|    Startup time for empty database (0 B)    | Same as above  |
+|   Startup time for 1,000 entries (45 KB)    |   23.192 ms    |
+|  Startup time for 10,000 entries (458 KB)   |   118.716 ms   |
+| Startup time for 1,000,000 entries (48 MB)  |    5.267 s     |
+| Startup time for 2,000,000 entries (276 MB) |    11.141 s    |
+
+### Database performance (small data - encryption on)
+|                    Test                    | Execution time |
+|:------------------------------------------:|:--------------:|
+|   Startup time for empty database (0 B)    |   13.331 ms    |
+|   Startup time for 1,000 entries (45 KB)   |   57.056 ms    |
+|  Startup time for 10,000 entries (458 KB)  |   178.260 ms   |
+| Startup time for 1,000,000 entries (48 MB) |    5.425 s     |
+| Startup time for 2,000,000 entries (97 MB) |    11.249 s    |
+
+### Program performance
+|                    Test                    | Execution time |
+|:------------------------------------------:|:--------------:|
+|          Webserver and TCP start           |    2.266 ms    |
+|        CLI commands initialization         |    0.002 ms    |
+|             Parsing a command              |    0.565 ms    |
+|                Entry lookup                |    0.004 ms    |
 
 **Note:** these values are based on the current version and may change on the future releases.
 
@@ -387,7 +430,7 @@ To see how long a command takes to execute, enable the timing attribute by sendi
 │ Get all the information about the running application.                                                  │
 │ Usage: info [?FILTERS]                                                                                  │
 │     [FILTERS]:                                                                                          │
-│         * Optionals                                                                                     │
+│         * Optional                                                                                      │
 │         * Default value: "all"                                                                          │
 │         * Options: "database" or "db", "persistent", "memory" or "mem", "app", "server", "all" or "*"   │
 │                                                                                                         │
@@ -471,7 +514,7 @@ Output of the `info` command:
 ```
 ```
 ╭ delete [KEYS] ─────────────────────────────────────────────╮
-│ Remove an existing value from memory or set a new one.     │
+│ Remove an existing value from memory.                      │
 │ Usage: delete [KEYS]                                       │
 │     [KEYS]:                                                │
 │     * Required                                             │
@@ -547,7 +590,7 @@ Output of the `info` command:
 │ truncating. Also you need to reload the database after truncating   │
 │ to keep it up to date.                                              │
 │ If the database index is not loaded, won't be truncated.            │
-│ Usage: truncate [INDEX] [CONFIRM] [?OPTIONS]                        │
+│ Usage: truncate [INDEX] [CONFIRM]                                   │
 │     [INDEX]:                                                        │
 │     * Required                                                      │
 │     * Description: The index of the database file to be truncated,  │

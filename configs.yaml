@@ -7,7 +7,7 @@ logs:
   # Whether to show current time before the log text.
   show_time: false
 
-  # Time format if tou enabled 'show_time'.
+  # Time format if you enabled 'show_time'.
   time_format: "Y-m-d H:i:s"
 
   # Whether to print ANSI colors or not.
@@ -19,6 +19,9 @@ logs:
 
   # Whether to keep authorization attempts to CLI
   save_cli_logins: true
+
+  # Measure how much time does it take to run different parts of the database
+  benchmark: true
 
 # Server configuration
 server:
@@ -35,19 +38,19 @@ server:
   max_cli_login_attempt: 5
 
   # Lockdown type for CLI and websocket authentication.
-  # After exceeding the login attempts, the CLI will be locked down.
+  # After exceeding the max login attempts, the CLI will be locked down.
   # Set it to "ip" to block that IP for a certain amount of time.
   # Set it to "token" to block that token for a certain amount of time. This can be helpful against brute-force attacks
   # as the attacker can change their IP.
   # Note: Lockdown doesn't affect existing sessions, but as soon as they leave the room, they can't log in again
-  # until the cool-down period completes.
+  # until the cool-down period completes (if they use a locked-down token).
   cli_lockdown: "ip"
 
   # Cooldown period (in seconds)
-  # After a few unsuccessful login attempts, the lockdown starts and after a certain amount of time it'll disable the
-  # lockdown. Also, you can disable it manually by removing the '.lockdown' file in the current directory.
+  # After a few unsuccessful login attempts, the lockdown starts and after a certain amount of time it'll be lifted out.
+  # Also, you can disable it manually by removing the '.lockdown' file in the program root directory.
   # When lockdown starts the locked-down IPs or tokens will be disabled and no one can authenticate with those IPs or
-  # tokens until lockdown ends.
+  # tokens until the period is passed.
   # Minimum value: 5
   # Note: this option will be used for websocket authentication too, however in websocket, login attempts are stored
   # inside memory and in case of crash or exiting the process, the attempts list will be cleared.
@@ -63,7 +66,7 @@ server:
   # For example, by sending the command "set key1 value1", the input size will be 15 characters
   # or 30 bytes in UTF-16.
   # The correct format is "XY" where X is the expected size without a fraction (e.g: 12, 10) and Y is the
-  # size unit (e.g: "MB", "B", "KB") which is case-insensitive.
+  # size unit (e.g: "MB", "B", "KB", "MiB") which is case-insensitive.
   # For no limit, set it to 0
   cli_input_size: 256KB
 
@@ -72,8 +75,8 @@ server:
   http_server: true
 
   # Enabling the home page for GUI.
-  # If you enable this, you can access the graphical interface for database management.
-  # Requires your access token to access the GUI.
+  # If you enable this, you can access the home page and API endpoints (might not be implemented in the current version)
+  # Requires your access token to access API endpoints.
   home_page: true
 
   # Set the host for GUI control panel
@@ -116,7 +119,7 @@ persistent:
   # If you don't need your data to be permanent, you can disable this option.
   # Disabling this option will store data in memory only,
   # which means all data will be lost once the application is terminated.
-  # Use this for temporary data storage needs, where data permanence is not required (like caching systems).
+  # Change this for temporary data storage needs, where data permanence is not required (like caching systems).
   enabled: true
 
   # Define the maximum size for each backup file.
@@ -124,22 +127,31 @@ persistent:
   # and new data will be written to the new file.
   # Set the limit to 0 to allow backups of unlimited size, though this is not recommended.
   # Unlimited file sizes may lead to performance issues as the application runs for long periods.
-  backup_size_limit: 10KB
+  backup_size_limit: 5MB
 
   # Define the interval of the backup operation in milliseconds
   # To disable backup, set it to 0
   backup_interval: 5000
 
+  # Define the interval of the snapshot operation in milliseconds
+  # To disable automatic snapshots, set it to 0
+  # When taking a snapshot, backup (AOL) files will be parsed and their data will be written on the database
+  # IMPORTANT NOTE: snapshots can be heavy depending on the database count and pending data size, to prevent heavy load
+  # on your system, you might want to assign a big interval.
+  # When a snapshotting process overlaps another (one is not finished yet and another is about to begin), the new
+  # process will be ignored.
+  snapshot_interval: 5000
+
 # MEID (Mapped Excluded Independent Database)
 meids:
 
   # Whether to encrypt database files.
-  # If you enable encryption, you need to change "encryption_key_32" in `snowflake.sfx` file. This '.sfx' file is the
-  # cypher key of your encryption, you can change this key file path.
+  # If you enable encryption, you need to set a 32-byte string in `snowflake.sfx` file or let it generate a random key.
+  # This '.sfx' file is the cypher key of your encryption, you can change this key file path.
   # The encryption key is a 32-byte string that will be used for encryption and decryption of your database.
   # If the encryption key is bigger than 32 bytes, it'll trim the rest of it, and if it's less than 32 bytes it'll throw
   # an error.
-  # Note that these zeros are not actual zeros, they will represent their ASCII code which is 48 or 0x30
+  # If you remove the file it'll generate a random key for you. Feel free to take a backup from your encryption key.
   encrypt: false
 
   # The path of Snowflake cypher key file
@@ -162,9 +174,9 @@ meids:
 
   # Whether to verify the file signatures against the app signature.
   # If enabled, the database files must match the current app signature (which can be modified in the app.json file);
-  # otherwise, the application will not start.
+  # otherwise, the program won't start.
   # This is a simple validation step to prevent accidentally accessing a different database directory or file.
-  check_signature: true
+  check_signature: false
 
   # Your database splits data into multiple files (called MEIDs) to reduce the risk of data corruption and avoid large
   # file sizes.
@@ -180,18 +192,18 @@ meids:
   # 32 is a reasonable value, allowing you to store up to 128GB of data in total (by default).
   max_count: 32
 
-  # The allowed size of each entry in database files (MEID).
-  # By limiting the allowed size, you limit the maximum size for each entry in each MEID file.
-  # If the limit exceeds, it won't add that entry to the database and will switch to the next MEID if possible.
-  # NOTE: you need as twice as much this size free RAM. During persistent operations
+  # The allowed size of each database file (MEID).
+  # By limiting the allowed size, you limit the maximum size of each file.
+  # If the limit exceeds, it won't add that any other entry to the database unless there is more space in other MEID
+  # files.
   # The correct format is "XY" where X is the expected size (e.g: 12, 10.5) and Y is the
   # size unit (e.g: "MB", "B", "KB") which is case-insensitive.
-  # Set it to any value less than 0 for no limit.
+  # Set it to 0 for no limit.
   # It supports both SI (e.g: MB, GB) and IEC (MiB, GiB) formats
   # 1GB = 1,000,000,000 Bytes
   # 1GiB = 1,073,741,824 Bytes
   # Max value is 4GB or 3.72529GiB
-  size: 100KB
+  size: 4GB
 
 # Memory management configuration
 memory:
@@ -201,12 +213,12 @@ memory:
   monitor: true
 
   # [MONITOR]
-  # Maximum allowed size memory can reach, if the limit exceeds, it won't add any entry to the memory
+  # Maximum allowed size memory can reach, if the limit exceeds, it won't add any entry to the memory.
   # The correct format is "XY" where X is the expected size (e.g: 12, 10.5) and Y is the size
   # unit (e.g: "MB", "B", "KB") which is case-insensitive.
   # If you add no unit, it would be considered as B (bytes).
   # Set it to 0 for no limit.
-  max_size: 512MB
+  max_size: 4GB
 
   # Whether to use mega-binary mode or not (mostly used in displaying data size).
   # In Mega-binary mode, 1KB equals to 1024 bytes, but in standard mode it equals to 1000 bytes.

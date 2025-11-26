@@ -335,6 +335,8 @@ class SnowflakeCore {
 
         let table = [], is_valid = true;
 
+        const checkSignature = Snowflake.yaml.isTrue("meids.check_signature");
+
         // Iterate every MEID and key file
         for(let [, file_name] of Object.entries([...this.#meids, ...this.#keys])){
 
@@ -369,7 +371,7 @@ class SnowflakeCore {
                 const signature = header.sfCapture(Snowflake.HDR_POS.SIGNATURE, Snowflake.HDR_SIZE.SIGNATURE);
 
                 // Validate the signature
-                if(!signature.equals(validSignature))
+                if(checkSignature && !signature.equals(validSignature))
                     problems.push(`Database signature (${signature.toString()}) doesn't match the core signature (${validSignature.toString()})`);
 
                 // Check version compatibility
@@ -461,7 +463,9 @@ class SnowflakeCore {
 
         const index = parseInt(path.basename(filePath).replace("meid-", "").replace("key-", ""));
 
+        const timerId = Snowflake.logger.timeStart();
         const buffer = fs.readFileSync(filePath);
+        Snowflake.logger.benchmark("--- Read " + (isMeid ? `meid-${index}.sfd` : `key-${index}.sfk`) + " file", timerId);
 
         // If the file isn't empty (the first 32 bytes are header data)
         if (buffer.length >= 32) {
@@ -557,6 +561,109 @@ class SnowflakeCore {
         return buffer.length;
 
     }
+
+    /*loadDatabaseFile(filePath, isMeid){
+
+        const index = parseInt(path.basename(filePath).replace("meid-", "").replace("key-", ""));
+
+        const timerId = Snowflake.logger.timeStart();
+        const buffer = fs.readFileSync(filePath);
+        Snowflake.logger.benchmark("--- Read " + (isMeid ? `meid-${index}.sfd` : `key-${index}.sfk`) + " file", timerId);
+
+        // If the file isn't empty (the first 32 bytes are header data)
+        if (buffer.length >= 32) {
+
+            // Start after the header
+            let pos = 32;
+
+            const header = buffer.subarray(0, 32);
+
+            // Check if the file is encrypted
+            const isEncrypted = header.subarray(Snowflake.HDR_POS.ENCRYPTION, Snowflake.HDR_POS.ENCRYPTION + Snowflake.HDR_SIZE.ENCRYPTION).readUint8(0) > 0;
+
+            if(isEncrypted && !this.#dbEncrypt){
+                Snowflake.logger.assert("Some or all of your database files are encrypted, but encryption is disabled in 'configs.yaml' file.\n" +
+                    "To disable encryption you need to set both 'meids.encrypt' and 'meids.recover' to 'true' and then restart the app.");
+            }
+
+            if (isMeid) {
+
+                // Iterate each block
+                while (pos < buffer.length) {
+
+                    // Start position of the entry
+                    const position = pos;
+
+                    // The first 32-byte of the block is the hash
+                    const hash = buffer.subarray(pos, pos + 32);
+                    pos += 32;
+
+                    // The next 4-byte is key size (in bytes)
+                    const size = buffer.subarray(pos, pos + 4).readUInt32BE();
+                    pos += 4;
+
+                    // Get the value based on its size
+                    let valueBuffer = buffer.subarray(pos, pos + size);
+
+                    // Decrypt data based on the given key and salt
+                    if(isEncrypted)
+                        valueBuffer = Snowflake.cypher.decrypt(valueBuffer, pos);
+
+                    // Decode the key
+                    const value = Snowflake.fromBuffer(valueBuffer);
+
+                    pos += size;
+
+                    // Set the value into lookup table
+                    this.#setLookupValue(hash, value, index, size, position);
+
+                }
+
+            }
+            else {
+
+                // Iterate each block
+                while (pos < buffer.length) {
+
+                    // Start position of the entry
+                    const position = pos;
+
+                    // The first 32-byte of the block is the hash
+                    const hash = buffer.subarray(pos, pos + 32);
+                    pos += 32;
+
+                    // The next 4-byte is key size (in bytes)
+                    const size = buffer.subarray(pos, pos + 4).readUInt32BE();
+                    pos += 4;
+
+                    // Get the key based on its size
+                    let keyBuffer = buffer.subarray(pos, pos + size);
+
+                    // Decrypt data based on the given key and salt
+                    if(isEncrypted)
+                        keyBuffer = Snowflake.cypher.decrypt(keyBuffer, pos);
+
+                    // Decode the key
+                    const key = Snowflake.fromBuffer(keyBuffer);
+                    pos += size;
+
+                    // Double-check the hash to check if the key is valid
+                    if (Snowflake.sha256(this.sanitizeKey(key), true).compare(hash) === 0) {
+
+                        // Add it to the lookup table
+                        this.#setLookupKey(key, index, size, position, hash);
+
+                    }
+
+                }
+
+            }
+
+        }
+
+        return buffer.length;
+
+    }*/
 
     /**
      * Unload database from memory and reset to initial states
@@ -850,7 +957,9 @@ class SnowflakeCore {
             const { state } = data;
             if (Snowflake.FILE_STATES.isReady(state)) {
                 try {
-                    totalSize += this.loadDatabaseFile(this.getFilePath(filename), filename.startsWith("meid-"));
+                    Snowflake.logger.benchmarkCode(() => {
+                        totalSize += this.loadDatabaseFile(this.getFilePath(filename), filename.startsWith("meid-"));
+                    }, `-- ${filename} was loaded`);
                 } catch (e){
                     Snowflake.logger.assert(
                         "Could not load your database files, these are a some possibilities:" +
@@ -1026,7 +1135,7 @@ class SnowflakeCore {
         // Create a table to report the database information
         Snowflake.logger.table([
             {key: "Path", value: `%underline%${this.#dbPath}%reset%`},
-            {key: "Version", value: `${appConfig.meid_version}`},
+            {key: "Version", value: `${Snowflake.meidVersion}`},
             {key: "Encryption", value: `${this.#dbEncrypt ? "Yes" : "No"}`},
             {key: "Max size", value: `${meidsSize === 0 ? "Not limited (4GB)" : maxMeidSize}`},
             {key: "Count", value: `${meidsCount} MEID` + (meidsCount > 1 ? "s" : "")},
@@ -1165,7 +1274,9 @@ class SnowflakeCore {
         this.#memoryMonitor = Snowflake.yaml.isTrue("memory.monitor");
 
         // Initialize the database
-        this.init().initMeidsAndKeys();
+        Snowflake.logger.benchmarkCode(() => {
+            this.init().initMeidsAndKeys();
+        }, "- Database files validated");
 
         // Trigger the initialization event
         SnowflakeEvents.emit("core_before_database_read");
@@ -1182,7 +1293,9 @@ class SnowflakeCore {
         });
 
         // Initialize AOL worker event handler
-        this.initAolWorker();
+        Snowflake.logger.benchmarkCode(() => {
+            this.initAolWorker();
+        }, "- Backup worker threads started");
 
         // Handle worker errors
         this.#workers.aol.on("error", msg => {
@@ -1191,7 +1304,9 @@ class SnowflakeCore {
         });
 
         // Load all database content into memory
-        this.loadDatabase();
+        Snowflake.logger.benchmarkCode(() => {
+            this.loadDatabase();
+        }, "- Database keys and data were loaded");
 
         if(this.#dbRecover){
             Snowflake.logger.log("%blue%[DATABASE] Recovering database...");
@@ -1669,10 +1784,12 @@ class SnowflakeCore {
     /**
      * Remove specific entry from database
      * @param {string} key - The key you want to remove
+     * @param {boolean} askWorker - Whether to ask worker thread to add the remove instruction to the backup file. If
+     * set to false, the entry won't be removed forever and will be restored at next startup.
      * @return {boolean} - True on success, false on failure
      * @since 1.0.0
      */
-    remove(key){
+    remove(key, askWorker = true){
 
         // Fast lookup to ignore deletion if the key doesn't exist
         if(!this.exist(key))

@@ -12,6 +12,9 @@ const AccessToken = require("./objects/AccessToken").default;
  * @since 1.0.0
  */
 let Snowflake = {
+    version: "1.0.0",
+    versionCode: 1,
+    meidVersion: 1,
     /**
      * The logger core
      * @type {SnowflakeLogger|null}

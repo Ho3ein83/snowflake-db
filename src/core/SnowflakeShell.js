@@ -72,7 +72,7 @@ class SnowflakeShell {
 
         if(configs.timeout > 0){
             this.connectionTimeout = setTimeout(() => {
-                this.destroy("Connection timed out before completing the authentication.");
+                this.destroy("Connection timed out before completing the authentication.", "timeout");
             }, configs.timeout);
         }
 
@@ -103,7 +103,7 @@ class SnowflakeShell {
 
         let lockdown_reported = false;
         this.#socket.on("data", (data) => {
-            const command = data.toString("utf-8").trim();
+            let command = data.toString("utf-8").trim();
             const sizeLimit = this.#configs.max_input_size;
             // Command length * 2 because are strings are encoded with UTF-16 (2 bytes)
             if(sizeLimit > 0 && command.length * 2 > sizeLimit){
@@ -132,6 +132,9 @@ class SnowflakeShell {
                 const m = command.replace("@", "");
                 this.#configs.mode = m;
                 this.sendState("mode_changed", m, -3);
+                if(m === "json" && !this.#access){
+                    this.sendState("authenticate", "token", 2);
+                }
                 this.writePrompt(1);
                 return;
             }
@@ -159,7 +162,7 @@ class SnowflakeShell {
                         const sessions = this.#cli.tokenSessions(command);
                         if(sessions >= max_connections){
                             this.sendState("full_room", command, -2);
-                            this.destroy("Connection limit for this token exceeded.");
+                            this.destroy("Connection limit for this token exceeded.", "connection_limit");
                             SnowflakeEvents.emit("cli_server_login_attempt", {shell: this, success: false, token: command, cause: "full_room"});
                             return;
                         }
@@ -221,12 +224,23 @@ class SnowflakeShell {
     /**
      * Destroy the session
      * @param {string|null} error_message - Error message or pass null to use default message
+     * @param {string|null} cause - The cause of the error (short and descriptive string, e.g: "access_denied").
+     * Pass null to ignore it
      * @since 1.0.0
      */
-    destroy(error_message=null){
+    destroy(error_message=null, cause = null){
         if(error_message === null)
             error_message = "Disconnected";
-        this.#socket.write(Snowflake.logger.formatColor(`\n%red%${error_message}\n`, this.mode === "json"));
+        const message = Snowflake.logger.formatColor(`\n%red%${error_message}\n`, this.mode === "json");
+        if(this.mode === "json"){
+            this.#socket.write(JSON.stringify({
+                action: cause,
+                message_text: String(message).trim(),
+            }));
+        }
+        else{
+            this.#socket.write(message);
+        }
         this.#socket.destroy(new Error(error_message));
         SnowflakeEvents.emit("cli_server_connection_end", { shell: this });
         return this;

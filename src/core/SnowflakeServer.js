@@ -526,6 +526,86 @@ class SnowflakeServer {
                         }
 
                     }
+                    else if(endpoint === "benchmark"){
+
+                        if(access.hasAccess("db_stats")) {
+
+                            const benchmark = {};
+
+                            const { tests } = data;
+
+                            if(!Array.isArray(tests)){
+                                this.sendErrorResponse(connection, requestId, { msgId: "bad_request", msg: "Failed to handle your request" });
+                                return;
+                            }
+
+                            if(tests.includes("entries")){
+
+                                // Create empty list for test results
+                                benchmark["entries_write"] = [];
+                                benchmark["entries_read"] = [];
+                                benchmark["entries_delete"] = [];
+
+                                // Test for set/get/remove operations
+                                for(let entriesCount of [1, 10, 100, 1000]){
+
+                                    // ID for timing
+                                    const id = `${requestId}_${entriesCount}`;
+
+                                    // Set
+                                    Snowflake.logger.timeStart(id);
+                                    for(let i = 0; i < entriesCount; i++){
+                                        Snowflake.core.setUnsafe(id + `_${i}`, i);
+                                    }
+                                    let end = Snowflake.logger.timeEnd(id);
+                                    if(end){
+                                        benchmark["entries_write"].push({
+                                            entries: entriesCount,
+                                            time: Number(end).toFixed(4)
+                                        });
+                                    }
+
+                                    // Get
+                                    Snowflake.logger.timeStart(id);
+                                    for(let i = 0; i < entriesCount; i++){
+                                        Snowflake.core.get(id + `_${i}`);
+                                    }
+                                    end = Snowflake.logger.timeEnd(id);
+                                    if(end){
+                                        benchmark["entries_read"].push({
+                                            entries: entriesCount,
+                                            time: Number(end).toFixed(4)
+                                        });
+                                    }
+
+                                    // Remove
+                                    Snowflake.logger.timeStart(id);
+                                    for(let i = 0; i < entriesCount; i++){
+                                        Snowflake.core.remove(id + `_${i}`, false);
+                                    }
+                                    end = Snowflake.logger.timeEnd(id);
+                                    if(end){
+                                        benchmark["entries_delete"].push({
+                                            entries: entriesCount,
+                                            time: Number(end).toFixed(4)
+                                        });
+                                    }
+                                }
+
+                            }
+
+                            this.sendSuccessResponse(connection, requestId, {
+                                benchmark
+                            });
+
+                            return;
+
+                        }
+                        else{
+                            accessDenied = true;
+                        }
+
+                    }
                     else if(endpoint === "persistent"){
 
                         if(Snowflake.core.lastPersistent + 10 * 1000 > Date.now()){

@@ -9,6 +9,7 @@ const path = require("path");
  */
 const SnowflakeLogger = (function(){
 
+
     /**
      * @class SnowflakeLogger
      */
@@ -25,7 +26,8 @@ const SnowflakeLogger = (function(){
             "enabled": false,
             "show_time": true,
             "time_format": "Y-m-d H:i:s",
-            "use_colors": true
+            "use_colors": true,
+            "benchmark": false
         }, conf);
 
         /**
@@ -392,6 +394,54 @@ const SnowflakeLogger = (function(){
             if(_config.enabled)
                 this.log(`%red%[ERROR]${mark ? `[${mark.toString().toUpperCase()}]` : ""} ${text}`);
             return this;
+        }
+
+        let timing = {}, timingCounter = 0;
+
+        this.timeStart = (id = null) => {
+
+            if(id === null || !["number", "string"].includes(typeof id)) {
+                timing[++timingCounter] = performance.now();
+                return timingCounter;
+            }
+            else {
+                timing[id] = performance.now();
+                return id;
+            }
+
+        }
+
+        this.timeEnd = (id = null) => {
+
+            if(id === null || !["number", "string"].includes(typeof id))
+                id = Object.keys(timing)[0];
+
+            if(id){
+                const start = timing[id]
+                return performance.now() - start;
+            }
+
+            return null;
+
+        }
+
+        this.benchmark = (message, id = null) => {
+            if(!_config.benchmark)
+                return;
+
+            const end = this.timeEnd(id);
+            if(end !== null)
+                this.log(`%faint%${message} in ${Number(end).toFixed(4).toString().replace(".0000", "")}ms`);
+        }
+
+        this.benchmarkCode = (callback, message, id = null) => {
+            if(!_config.benchmark){
+                callback();
+                return;
+            }
+            const newId = this.timeStart(id);
+            callback();
+            this.benchmark(message, newId);
         }
 
     }

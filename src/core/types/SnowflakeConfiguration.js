@@ -7,6 +7,7 @@
  *     use_colors: boolean,
  *     save_cli_connections: boolean,
  *     save_cli_logins: boolean
+ *     benchmark: boolean
  * }} logs
  * @property {{
  *     port: number,
@@ -54,7 +55,7 @@
 
 /**
  * @typedef {(
- * "logs.enabled" | "logs.show_time" | "logs.time_format" | "logs.use_colors" | "logs.save_cli_connections" | "logs.save_cli_logins" |
+ * "logs.enabled" | "logs.show_time" | "logs.time_format" | "logs.use_colors" | "logs.save_cli_connections" | "logs.save_cli_logins" | "logs.benchmark" |
  * "server.port" | "server.cli_port" | "server.max_cli_login_attempt" | "server.cli_lockdown" | "server.cli_cooldown" | "server.cli_authentication_timeout" | "server.cli_input_size" | "server.http_server" | "server.home_page" | "server.allowed_origins" | "server.gui_host" | "server.secure_gui" |
  * "dir.database" | "dir.logs" |
  * "persistent.enabled" | "persistent.backup_size_limit" | "persistent.backup_interval" |

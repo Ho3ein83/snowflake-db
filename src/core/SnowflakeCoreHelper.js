@@ -136,7 +136,7 @@ Examples: set key1 value1
                         } catch (e) {
                             // Handle JSON parse error (optional)
                             if(Snowflake.isDevelopment)
-                                console.error(`Invalid JSON: ${item}`);
+                                console.error(`Invalid JSON: ${item}`, e);
                             else
                                 console.error("Tried to parse invalid JSON in datasets");
                         }
@@ -153,10 +153,10 @@ Examples: set key1 value1
                 }
 
                 let msg = '';
-                if(updates > 0) msg += `${updates} entr${updates > 1 ? "ies" : "y"} updated\n`;
-                if(news > 0) msg += `${news} entr${news > 1 ? "ies" : "y"} inserted`;
-                if(limited > 0) msg += `${limited} entr${limited > 1 ? "ies" : "y"} exceeded the memory limit`;
-                if(notChanged > 0) msg += `${notChanged} entr${notChanged > 1 ? "ies" : "y"} didn't change`;
+                if(updates > 0) msg += ` ${updates} entr${updates > 1 ? "ies" : "y"} updated\n`;
+                if(news > 0) msg += ` ${news} entr${news > 1 ? "ies" : "y"} inserted`;
+                if(limited > 0) msg += ` ${limited} entr${limited > 1 ? "ies" : "y"} exceeded the memory limit`;
+                if(notChanged > 0) msg += ` ${notChanged} entr${notChanged > 1 ? "ies" : "y"} didn't change`;
 
                 return [msg.trim(), updates + news, 0];
             },
@@ -164,7 +164,7 @@ Examples: set key1 value1
 
         // Delete an existing entry
         SnowflakeCLI.command("delete", {
-            help: `Remove an existing value from memory or set a new one.
+            help: `Remove an existing value from memory.
 Aliases: remove | rm
 Usage: delete [KEYS]
     [KEYS]:
@@ -297,7 +297,11 @@ Examples: list
                 if(list.length === 0)
                     return [scope === "trash" ? "The trash is empty" : "No item found", null, 0, false];
 
-                let msg = "Found " + list.length + ` item${list.length > 1 ? "s" : ""}:`;
+                const total = Snowflake.core.getEntriesCount();
+                const totalPages = Math.ceil(total / limit);
+
+                let msg = "Found " + list.length + ` item${list.length > 1 ? "s" : ""} (total ${total} entr${total > 1 ? "ies" : "y"} in ${totalPages} page${totalPages > 1 ? "s" : ""}):`;
+
                 for (const listElement of list) {
                     if(typeof listElement === "object"){
                         for(let [key, value] of Object.entries(listElement)){
@@ -325,7 +329,7 @@ Note that it will regenerate the headers for each file after
 truncating. Also you need to reload the database after truncating
 to keep it up to date.
 If the database index is not loaded, won't be truncated.
-Usage: truncate [INDEX] [CONFIRM] [?OPTIONS]
+Usage: truncate [INDEX] [CONFIRM]
     [INDEX]:
     * Required
     * Description: The index of the database file to be truncated,
@@ -437,10 +441,10 @@ Examples: reload
             help: `Takes a snapshot from the current database
 and stores it in the database files.
 Alias: persist
-Usage: persist
+Usage: persistent
 
-Examples: persist`,
-            usage: "persist",
+Examples: persistent`,
+            usage: "persistent",
             validate: () => true,
             exec: () => {
 
@@ -507,7 +511,7 @@ Examples: shutdown
         const buffer = Buffer.alloc(32);
 
         // Write the database version to the first 2 bytes of header
-        buffer.writeUInt16BE(Math.max(appConfig.meid_version, 1), Snowflake.HDR_POS.VERSION_CODE);
+        buffer.writeUInt16BE(Math.max(Snowflake.meidVersion, 1), Snowflake.HDR_POS.VERSION_CODE);
 
         // Write the current time to the data chunk of header
         // Data chunk starts at 128th bit, and it can store any meta-data without invalidating the header
@@ -556,6 +560,8 @@ Examples: shutdown
         const files = this.backupFiles;
 
         if(files.length > 0) {
+
+            Snowflake.logger.timeStart("backup_recover");
 
             Snowflake.logger.log(`%cyan%[BACKUP] Recovering ${files.length} backup${files.length > 1 ? "s" : ""}...`);
 
@@ -617,6 +623,7 @@ Examples: shutdown
 
                 // If backup files weren't deleted without restoring them
                 if(restoreBackups !== 2){
+                    Snowflake.logger.benchmark("Backup restored", "backup_recover");
                     Snowflake.logger.logln(`%green%[BACKUP] ${files.length} backup file${files.length > 1 ? "s" : ""} restored successfully.`);
                     Snowflake.logger.logln(`%cyan%[PERSIST] Persisting the data after backups restoration...`);
 

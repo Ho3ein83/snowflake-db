@@ -5,8 +5,6 @@ const {v4: uuid4} = require("uuid");
 const {createServer} = require("net");
 const fs = require("fs");
 
-const appConfig = require("../../app.json");
-
 /**
  * @class SnowflakeCLI
  * @description The CLI core class for command line access
@@ -157,7 +155,7 @@ Examples: exit
             help: `Get all the information about the running application.
 Usage: info [?FILTERS]
     [FILTERS]:
-        * Optionals
+        * Optional
         * Default value: "all"
         * Options: "database" or "db", "persistent", "memory" or "mem", "app", "server", "all" or "*"  
 
@@ -342,12 +340,12 @@ Examples: info databases
             ],
             app: [
                 {key: "Application", value: "", divider: true, color: "cyan"},
-                {key: "Version Name", value: appConfig.version},
-                {key: "Version Code", value: appConfig.version_code},
+                {key: "Version Name", value: Snowflake.version},
+                {key: "Version Code", value: Snowflake.versionCode},
             ],
             database: [
                 {key: "Database", value: "", divider: true, color: "cyan"},
-                {key: "MEID Version", value: appConfig.meid_version},
+                {key: "MEID Version", value: Snowflake.meidVersion},
                 {key: "MEIDs Count", value: Snowflake.yaml.getInt("meids.count")},
                 {key: "MEIDs Encryption", value: Snowflake.yaml.isTrue("meids.encrypt") ? "Enabled" : "Disabled"},
                 {key: "Last Reload", value: Snowflake.core.lastReload > 0 ? Snowflake.sinceDate(Snowflake.core.lastReload) : "%faint%Never"},
@@ -776,11 +774,11 @@ Examples: info databases
 
         const server = createServer(socket => {
 
-            let timeout_duration = Snowflake.yaml.getInt("server.cli_authentication_timeout", 0);
+            let timeoutDuration = Snowflake.yaml.getInt("server.cli_authentication_timeout", 0);
 
             const shell = new SnowflakeShell(this, socket, {
                 mode: "echo",
-                timeout: timeout_duration,
+                timeout: timeoutDuration,
                 max_input_size: Snowflake.convertSize(Snowflake.yaml.get("server.cli_input_size", 0), "B", true)
             });
 
