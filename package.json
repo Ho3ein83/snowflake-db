@@ -1,7 +1,7 @@
 {
   "name": "snowflake-database",
   "version": "1.0.0",
-  "main": "test.js",
+  "main": "index.js",
   "keywords": ["In-memory", "database", "cache", "caching", "snowflake"],
   "author": "Amatris",
   "license": "GPL-2.0-or-later",
@@ -11,8 +11,9 @@
     "yaml": "latest",
     "websocket": "^1.0.35",
     "msgpack-lite": "^0.1.26",
-    "shell": "latest",
-    "uuid": "latest",
-    "sanitize": "latest"
+    "uuid": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1"
   }
 }

@@ -11,17 +11,61 @@ logs:
   time_format: "Y-m-d H:i:s"
 
   # Whether to print ANSI colors or not.
-  # Disable this option in production, since you don't need to see any logs or you want to keep them in a text file.
+  # Disable this option in production, since you don't need to see any logs, or you want to keep them in a text file.
   use_colors: true
 
-  # Whether to keep every connection information to CLI
+  # Whether to keep every new CLI connection information in logs
+  # Only enable this option if you're only using Netcat or CLI tools, but if you are using other client tools such as
+  # PHP client or Browser client keep it disabled since the log file can easily grow up!
   save_cli_connections: true
 
   # Whether to keep authorization attempts to CLI
+  # Only enable this option if you're only using Netcat or CLI tools, but if you are using other client tools such as
+  # PHP client or Browser client keep it disabled since the log file can easily grow up!
   save_cli_logins: true
 
-  # Measure how much time does it take to run different parts of the database
+  # Display the execution time of operations in logs
   benchmark: true
+
+  # Whether to show backup logs (when taking backup in AOL files)
+  # Note: warnings and high priority messages will be shown despite what this option is set to
+  # Also remember that file logs will always get printed, this option only affects terminal and console logs
+  backup_logs: true
+
+  # Whether to show snapshot logs
+  # Note: warnings and high priority messages will be shown despite what this option is set to
+  # Also remember that file logs will always get printed, this option only affects terminal and console logs
+  snapshot_logs: true
+
+  # Whether to show database logs (validation, loading messages, file creations, etc.)
+  # Note: warnings and high priority messages will be shown despite what this option is set to
+  # Also remember that file logs will always get printed, this option only affects terminal and console logs
+  database_logs: true
+
+  # Whether to show server logs (HTTP/TCP/Socket connections and status messages)
+  # Note: warnings and high priority messages will be shown despite what this option is set to
+  # Also remember that file logs will always get printed, this option only affects terminal and console logs
+  server_logs: true
+
+  # Whether to show system logs (security logs, lockdown, configuration messages, etc.)
+  # Note: warnings and high priority messages will be shown despite what this option is set to
+  # Also remember that file logs will always get printed, this option only affects terminal and console logs
+  system_logs: true
+
+  # Whether to show shell logs (shell authorization, etc.)
+  # Note: warnings and high priority messages will be shown despite what this option is set to
+  # Also remember that file logs will always get printed, this option only affects terminal and console logs
+  shell_logs: true
+
+  # Whether to show CLI logs (CLI connections, server status, CLI authorization messages, etc.)
+  # Note: warnings and high priority messages will be shown despite what this option is set to
+  # Also remember that file logs will always get printed, this option only affects terminal and console logs
+  cli_logs: true
+
+  # Whether to show cypher logs (messages related to encryption core, e.g: key generation, algorithm selection)
+  # Note: warnings and high priority messages will be shown despite what this option is set to
+  # Also remember that file logs will always get printed, this option only affects terminal and console logs
+  cypher_logs: true
 
 # Server configuration
 server:
@@ -64,11 +108,11 @@ server:
   # You can limit the input size of CLI for safety reasons and more reliability.
   # Remember that if you limit the input size, you may not be able to add large data in memory.
   # For example, by sending the command "set key1 value1", the input size will be 15 characters
-  # or 30 bytes in UTF-16.
+  # or 15 bytes in UTF-8.
   # The correct format is "XY" where X is the expected size without a fraction (e.g: 12, 10) and Y is the
   # size unit (e.g: "MB", "B", "KB", "MiB") which is case-insensitive.
   # For no limit, set it to 0
-  cli_input_size: 256KB
+  cli_input_size: 1MB
 
   # Whether to handle HTTP request or leave them as they are
   # If you disable this option, internal GUI tools won't work
@@ -92,10 +136,10 @@ server:
   # Filter allowed origins, by using the default value ".*" you will accept any origins from any website.
   # Remember this origin is only for management applications like the web interface, not the TCP-CLI.
   # To filter the origin, use a regex for allowed origins, here are a few examples:
-  # 1) "https?:\/\/example\.com" - only accepts 'example.com' domain with both 'http' and 'https' protocols.
-  # 2) "https:\/\/example\.com" - only accepts 'example.com' domain with only https' protocol.
+  # 1) "https?:\/\/example\.com" - accepts 'example.com' origin with both 'http' and 'https' protocols.
+  # 2) "https:\/\/example\.com" - only accepts 'example.com' origin with only https' protocol.
   # 3) "https?:\/\/(example|domain)\.com" - only accepts 'example.com' and 'domain.com' domains.
-  # 4) "\.com$" - only accepts domains that ends with '.com'.
+  # 4) "\.com$" - only accepts domains that ends with '.com' (useless, but you get the idea).
   # 5) ".*" - accepts every domain.
   allowed_origins: ".*"
 
@@ -103,7 +147,7 @@ server:
 dir:
 
   # Database directory path, it can be either a relative path to the current directory or an absolute path to anywhere.
-  # If you want to locate the database files into another path, you can change it to a full target path.
+  # If you want to locate the database files into another path, you can change it to the full target path.
   database: "db"
 
   # Log files directory path, it can be either a relative path to the current directory or an absolute path to anywhere.
@@ -125,22 +169,34 @@ persistent:
   # Define the maximum size for each backup file.
   # When a backup file reaches this size limit, a new backup file will be created,
   # and new data will be written to the new file.
-  # Set the limit to 0 to allow backups of unlimited size, though this is not recommended.
-  # Unlimited file sizes may lead to performance issues as the application runs for long periods.
+  # Set the limit to 0 to allow backup files with unlimited size, though this is not recommended.
+  # Unlimited file sizes may lead to performance issues if the application runs for long periods.
+  # NOTE: it's not recommended to use a number less than a megabyte since it'll drop the entry if it's larger than this
+  # limit. Even for development and testing, do not set it to any number less than 20 bytes (the smallest entry possible).
   backup_size_limit: 5MB
 
-  # Define the interval of the backup operation in milliseconds
+  # Define the interval taking backups (in milliseconds)
   # To disable backup, set it to 0
-  backup_interval: 5000
+  # It's not recommended to use any number smaller than 5000, smaller number means more CPU load and increasing
+  # the risk of backup miss and data loss.
+  backup_interval: 30000
 
-  # Define the interval of the snapshot operation in milliseconds
+  # Define a limit for backup files before automatic snapshot gets triggered
+  # Set it to 0 to disable automatic snapshot
+  # For example if you set it to 5MB, when your backup (AOL) files reach to 5MB a new snapshot will be taken and
+  # all the backup files will be stored in the database and deleted after.
+  snapshot_size_trigger: 10MB
+
+  # Define the interval of taking snapshot (in milliseconds)
   # To disable automatic snapshots, set it to 0
   # When taking a snapshot, backup (AOL) files will be parsed and their data will be written on the database
   # IMPORTANT NOTE: snapshots can be heavy depending on the database count and pending data size, to prevent heavy load
-  # on your system, you might want to assign a big interval.
-  # When a snapshotting process overlaps another (one is not finished yet and another is about to begin), the new
-  # process will be ignored.
-  snapshot_interval: 5000
+  # on your system, on larger databases you might need to set a larger number.
+  # When a snapshot process overlaps another (one is not finished yet and another is about to start), the new
+  # process will be ignored (you can request one snapshot at a time).
+  # You can also disable is (by setting to 0) and then set a limit for backup files to get automatic snapshot after a
+  # certain amount of data has been written (see persistent.snapshot_size_trigger).
+  snapshot_interval: 0
 
 # MEID (Mapped Excluded Independent Database)
 meids:
@@ -189,20 +245,23 @@ meids:
   # Maximum number of allowed database files.
   # Once all MEID files are filled, the database will stop working until some space is freed.
   # When persisting data, this limit can also help prevent infinite or excessive long loops.
-  # 32 is a reasonable value, allowing you to store up to 128GB of data in total (by default).
+  # 32 is a reasonable value, allowing you to store up to 128GB of data in total (in the default configuration).
+  # Note: if you set 'meids.count' option to any number other than 0, this option will be useless. It means you can only
+  # use this option if you have indeterminate database.
   max_count: 32
 
-  # The allowed size of each database file (MEID).
+  # The allowed size for each database file (MEID).
   # By limiting the allowed size, you limit the maximum size of each file.
   # If the limit exceeds, it won't add that any other entry to the database unless there is more space in other MEID
   # files.
   # The correct format is "XY" where X is the expected size (e.g: 12, 10.5) and Y is the
   # size unit (e.g: "MB", "B", "KB") which is case-insensitive.
   # Set it to 0 for no limit.
-  # It supports both SI (e.g: MB, GB) and IEC (MiB, GiB) formats
+  # Supported SI units: B, KB, MB, GB, TB
+  # Supported IEC units: KiB, MiB, GiB, TiB
   # 1GB = 1,000,000,000 Bytes
   # 1GiB = 1,073,741,824 Bytes
-  # Max value is 4GB or 3.72529GiB
+  # Maximum value is 4GB or 3.72529GiB
   size: 4GB
 
 # Memory management configuration
@@ -218,12 +277,15 @@ memory:
   # unit (e.g: "MB", "B", "KB") which is case-insensitive.
   # If you add no unit, it would be considered as B (bytes).
   # Set it to 0 for no limit.
-  max_size: 4GB
+  # Note: this is the size of your database values only, not the actual size of your database in RAM;
+  # For example a database with 10,000 entries contained 458KB of data but took 54MB of RAM due to encryption (if enabled)
+  # and V8 object allocation.
+  max_size: 1GB
 
   # Whether to use mega-binary mode or not (mostly used in displaying data size).
   # In Mega-binary mode, 1KB equals to 1024 bytes, but in standard mode it equals to 1000 bytes.
   # Note that this might not be used in some cases. For example, when setting the MEID size, you define a fixed format
-  # for the file size, such as 4GB or 3.72GiB, which are effectively the same.
+  # for the file size, such as 4GB or 3.72GiB, which are effectively the same, it mostly is used for displaying sizes.
   mb_mode: false
 
 # Filesystem configuration
@@ -235,6 +297,7 @@ filesystem:
   # this limit. However, in filesystems such as "EXT4" you are allowed to store up to 16TiB in each file!
   # Allowed filesystems are (case-insensitive): "FAT32", "EXT4", "NTFS".
   # If you are unsure about it, or you're not using any of these filesystems leave it set to "FAT32".
+  # If you are using EXT4 partition on your system, it's safe to use FAT32, since EXT4 supports more capacity than FAT32
   name: "FAT32"
 
   # The maximum allowed size that a file can be (or you want to be)

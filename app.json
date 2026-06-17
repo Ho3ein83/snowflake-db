@@ -7,7 +7,9 @@
   "access_keys": {
     "": {
       "alias": "SnowflakeDB",
-      "permissions": ["control_panel", "cp_database", "db_read", "db_write", "db_stats", "change_config"],
+      "permissions": [
+        "*"
+      ],
       "max_connections": -1
     }
   }

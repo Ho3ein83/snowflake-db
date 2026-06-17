@@ -1,4 +1,9 @@
-export default class AccessToken {
+/**
+ * Access token object
+ * @class AccessToken
+ * @since 1.0.0
+ */
+class AccessToken {
 
     /**
      * Token alias
@@ -82,3 +87,5 @@ export default class AccessToken {
     }
 
 }
+
+module.exports = AccessToken;

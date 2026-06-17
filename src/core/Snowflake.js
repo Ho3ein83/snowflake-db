@@ -1,11 +1,10 @@
-const { createHash } = require('node:crypto');
-const msgpack = require("msgpack-lite");
-const appConfig = require("../../app.json");
-
 require("./SnowflakeExtend");
+
+const AccessToken = require("./objects/AccessToken");
+const { createHash } = require("node:crypto");
+const msgpack = require("msgpack-lite");
 const path = require("path");
 const fs = require("fs");
-const AccessToken = require("./objects/AccessToken").default;
 
 /**
  * Snowflake object
@@ -29,7 +28,7 @@ let Snowflake = {
     yaml: null,
     /**
      * The main core
-     * @type {SnowflakeCore|null}
+     * @type {import("SnowflakeCore")|null}
      * @since 1.0.0
      */
     core: null,
@@ -46,11 +45,36 @@ let Snowflake = {
      */
     cypher: null,
     /**
+     * @type SnowflakeAppConfig
+     * @since 1.0.0
+     */
+    config: {},
+    /**
+     * The absolute path of Snowflake module directory
+     * @since 1.0.0
+     */
+    path: "",
+    /**
      * The absolute path of core directory
      * @type string
      * @since 1.0.0
      */
-    core_path: "",
+    corePath: "",
+    /**
+     * The absolute path of YAML configuration file
+     * @since 1.0.0
+     */
+    configPath: "",
+    /**
+     * The absolute path of app configuration JSON file
+     * @since 1.0.0
+     */
+    appConfigPath: "",
+    /**
+     * The absolute path of default app configuration JSON file
+     * @since 1.0.0
+     */
+    defaultAppConfigPath: "",
     /**
      * Whether the app is running in development or production environment
      * @since 1.0.0
@@ -59,7 +83,7 @@ let Snowflake = {
     /**
      * Determines if a value is considered true, these values are considered true: 'yes', 'true', '1', 1
      * It is also both case and type insensitive, which means you can pass 'True' or '1' and still get true
-     * Also any non-string value will be casted using Boolean(value)
+     * Also any non-string value will be cast using Boolean(value)
      * @param {any} value - Object to get the logical value of
      * @return {boolean}
      * @since 1.0.0
@@ -69,6 +93,15 @@ let Snowflake = {
             return ["true", "1", "yes", "on", "y"].includes(value.toLowerCase());
         return Boolean(value);
     },
+    /**
+     * Convert JavaScript values (object, array, number, buffer, etc.) to human-readable string.
+     * @param {any} value - Input value, can be any type
+     * @param {null|number} maxLength - Limit the maximum characters to display, pass null for no limit
+     * @param {string} ellipsis - Ellipsis characters to print when more data is available (when setting `maxLength`)
+     * @param {boolean} showType - Whether to display the type of data before it
+     * @returns {*}
+     * @since 1.0.0
+     */
     stringify: (value, maxLength = null, ellipsis = "...", showType = false) => {
         let type, data;
 
@@ -131,7 +164,7 @@ let Snowflake = {
     },
     /**
      * Converts a size from one unit to another.
-     * @param {string} input - The input size with unit (e.g., "1MB").
+     * @param {number|string} input - The input size with unit (e.g., "1MB").
      * @param {"B"|"KB"|"MB"|"GB"} outputFormat - The target size unit (e.g., "KB").
      * @param {boolean} mbMode - If true, use binary conversion (1024), otherwise standard (1000).
      * @return {number} - The converted size in the target unit or 0 for invalid input.
@@ -218,6 +251,29 @@ let Snowflake = {
     roughSizeOf: object => {
         const data = msgpack.encode(object);
         return data.length;
+    },
+    /**
+     * Find the matching files inside a path
+     * @param {string} targetPath - Target path
+     * @param {RegExp} regex - Regex to match
+     * @param {null|((filePath: string) => void)} onEach - Callback to handle each file; If you pass a function an empty
+     * array will be returned (if you have a directory with lots of files you can handle them directly without being
+     * worry about memory growing up).
+     * @returns {string[]}
+     * @since 1.0.0
+     */
+    globFiles: (targetPath, regex, onEach = null) => {
+        const files = [];
+        for(let fileName of fs.readdirSync(targetPath)){
+            if(regex.test(fileName)) {
+                const filePath = path.join(targetPath, fileName);
+                if(typeof onEach === "function")
+                    onEach(filePath);
+                else
+                    files.push(filePath);
+            }
+        }
+        return files;
     },
     /**
      * Zerofill a number
@@ -309,7 +365,7 @@ let Snowflake = {
                 // An unexpected error has occurred
                 return {id: "unexpected_error", success: false};
             case 6:
-                // Key value doesn't exist
+                // Key doesn't exist
                 return {id: "key_not_exist", success: false};
             case 7:
                 // Exit signal
@@ -324,6 +380,57 @@ let Snowflake = {
                 // Unknown state
                 return {id: "unknown", success: false};
         }
+    },
+    /**
+     * Parses a string containing leading `key:value;` pairs and extracts them
+     * until the first non–key-value segment is encountered.
+     *
+     * The function scans the input from left to right and stops parsing as soon
+     * as the pattern no longer matches `key:value;`. Values may be empty and are
+     * always treated as strings. Optional spaces after semicolons are ignored.
+     *
+     * Any remaining content after the last valid key-value pair is returned
+     * separately without modification.
+     *
+     * @param {string} input - The input string containing key-value pairs followed
+     * by optional trailing content.
+     * @return {{ pairs: Object<string, string>, rest: string }} An object where
+     * `pairs` is a map of parsed keys to their string values, and `rest` is the
+     * remaining unparsed portion of the input.
+     * @since 1.0.0
+     */
+    parseColonPairs: input => {
+
+        const result = Object.create(null),
+            length = input.length;
+        let index = 0;
+
+        while (index < length) {
+
+            // Find key
+            const colon = input.indexOf(":", index);
+            if (colon === -1) break;
+
+            const key = input.slice(index, colon);
+            if (!key) break; // Invalid key → stop parsing
+
+            // Find value end
+            const semicolon = input.indexOf(";", colon + 1);
+            if (semicolon === -1) break;
+
+            result[key] = input.slice(colon + 1, semicolon);
+
+            // Move index past `;` and optional spaces
+            index = semicolon + 1;
+            while (input[index] === " ") index++;
+
+        }
+
+        return {
+            pairs: result,
+            rest: input.slice(index)
+        };
+
     },
     /**
      * Convert seconds to clock time
@@ -342,17 +449,17 @@ let Snowflake = {
     },
     /**
      * Resolve relative paths based on current working directory and normalize absolute paths.
-     * @param {string} input_path - Relative (e.g: "dir", "./dir", "../dir") or absolute (e.g: "/var/log") path
-     * @param {string|null} base_path - Working directory, or pass null to use current's
+     * @param {string} inputPath - Relative (e.g: "dir", "./dir", "../dir") or absolute (e.g: "/var/log") path
+     * @param {string|null} basePath - Working directory, or pass null to use current's
      * @return {string} - Normalized path
      * @since 1.0.0
      */
-    resolvePath: (input_path, base_path = null) => {
-        if(path.isAbsolute(input_path))
-            return path.normalize(input_path);
-        if(base_path === null)
-            base_path = process.cwd();
-        return path.resolve(base_path, input_path);
+    resolvePath: (inputPath, basePath = null) => {
+        if(path.isAbsolute(inputPath))
+            return path.normalize(inputPath);
+        if(basePath === null)
+            basePath = process.cwd();
+        return path.resolve(basePath, inputPath);
     },
     /**
      * Generates an array of hash values for a given item using multiple hash functions.
@@ -424,13 +531,13 @@ let Snowflake = {
         }
     },
     /**
-     * Get current timestamp (divided by 1000)
-     * @param {boolean} micro_time
+     * Get current timestamp
+     * @param {boolean} inMilliseconds - Whether to return current timestamp in seconds or milliseconds
      * @return {number}
      * @since 1.0.0
      */
-    now: (micro_time=true) => {
-        return Math.floor(micro_time ? Date.now() : Date.now() / 1000);
+    now: (inMilliseconds=true) => {
+        return Math.floor(inMilliseconds ? Date.now() : Date.now() / 1000);
     },
     /**
      * Get the passed time since specified time
@@ -524,15 +631,24 @@ let Snowflake = {
     /**
      * Validate the token and make access object if the token is valid
      * @param {string} accessToken
-     * @return {AccessToken|boolean}
+     * @return {AccessToken|false}
      * @since 1.0.0
      */
     authenticateToken: accessToken => {
-        const data = (appConfig.access_keys ?? {})[accessToken] ?? false;
+        const data = (Snowflake.config.access_keys ?? {})[accessToken] ?? false;
         if(typeof data !== "object")
             return false;
         return new AccessToken(data);
     },
+    /**
+     * Constrain a number between a range (it can be used for pagination)
+     * @param {number} number - Original number
+     * @param {number|null} min - The minimum value `number` can be, pass `null` to ignore
+     * @param {number|null} max - The maximum value `number` can be, pass `null` to ignore
+     * @param {number|null} defaultNumber - Fallback value to use if `number` wasn't a valid number
+     * @returns {number}
+     * @since 1.0.0
+     */
     rangeNumber: (number, min = null, max = null, defaultNumber = null) => {
         let num = parseInt(number);
 
@@ -550,6 +666,306 @@ let Snowflake = {
 
         return num;
 
+    },
+    /**
+     * Sanitize configuration value by type
+     * @param {number|string|boolean} value - Non-object value
+     * @param {"bool"|"boolean"|"string"|"number"|"path"|"bytes"} type - Type of data for sanitization
+     * @param {any} defaultValue - The default value to return as a fallback if the value was invalid
+     * @returns {number|null|string|boolean}
+     * @since 1.0.0
+     */
+    sanitizeByType: (value, type, defaultValue = null) => {
+
+        switch(type){
+            case "bool":
+            case "boolean":
+                return Snowflake.isTrue(value);
+            case "string":
+                return String(value);
+            case "number":
+                const number = parseInt(value);
+                if(!isNaN(number))
+                    return number;
+                break;
+            case "path":
+                return path.normalize(String(value)).replace(/\.\.(\/|$)/g, "")
+            case "bytes":
+                const bytes = String(value).toUpperCase().replace("I", "i");
+                if(bytes.match(/^\d+(B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)$/))
+                    return bytes;
+                break;
+        }
+
+        return defaultValue;
+    },
+    /**
+     * Clean up configuration object to make sure it's all valid
+     * @param {object} configuration - Partial or complete configuration object
+     * @returns {object} Cleaned configuration object
+     * @since 1.0.0
+     */
+    sanitizeConfiguration: configuration => {
+
+        let output = {};
+
+        if (configuration && typeof configuration === "object") {
+
+            for (let [parentId, child] of Object.entries(configuration)) {
+
+                const parent = Snowflake.configSanitizer[parentId];
+
+                if (typeof parent !== "object" || typeof child !== "object")
+                    continue;
+
+                output[parentId] = {};
+
+                for (let [childId, data] of Object.entries(child)) {
+
+                    const childSanitizer = parent[childId];
+                    if (typeof childSanitizer === "undefined")
+                        continue;
+
+                    const type = childSanitizer.type;
+                    data = Snowflake.sanitizeByType(data, type, childSanitizer.default ?? null);
+
+                    if(typeof data === "string")
+                        data = data.replaceAll("\n", "");
+
+                    if(typeof childSanitizer.validator === "function")
+                        data = childSanitizer.validator(data);
+
+                    output[parentId][childId] = data;
+
+                }
+
+            }
+
+        }
+
+        return output;
+
+    },
+    /**
+     * Validation patterns for configuration, used to filter out invalid configuration when updating by user
+     * @since 1.0.0
+     */
+    configSanitizer: {
+        logs: {
+            enabled: {
+                type: "boolean",
+                default: true
+            },
+            show_time: {
+                type: "boolean",
+                default: false
+            },
+            time_format: {
+                type: "string",
+                default: "Y-m-d H:i:s",
+                validator: v => String(v).replace(/[^0-9a-zA-Z/\-\s:]/g, "").replace(/\s{2,}/g, " ")
+            },
+            use_colors: {
+                type: "boolean",
+                default: true
+            },
+            save_cli_connections: {
+                type: "boolean",
+                default: true
+            },
+            save_cli_logins: {
+                type: "boolean",
+                default: true
+            },
+            benchmark: {
+                type: "boolean",
+                default: true
+            },
+            backup_logs: {
+                type: "boolean",
+                default: true
+            },
+            snapshot_logs: {
+                type: "boolean",
+                default: true
+            },
+            database_logs: {
+                type: "boolean",
+                default: true
+            },
+            server_logs: {
+                type: "boolean",
+                default: true
+            },
+            system_logs: {
+                type: "boolean",
+                default: true
+            },
+            shell_logs: {
+                type: "boolean",
+                default: true
+            },
+            cli_logs: {
+                type: "boolean",
+                default: true
+            },
+            cypher_logs: {
+                type: "boolean",
+                default: true
+            }
+        },
+        server: {
+            port: {
+                type: "number",
+                default: 6401
+            },
+            cli_port: {
+                type: "number",
+                default: 6402
+            },
+            max_cli_login_attempt: {
+                type: "number",
+                default: 5
+            },
+            cli_lockdown: {
+                type: "string",
+                default: "ip",
+                validator: v => ["ip", "token"].includes(v) ? v : "ip"
+            },
+            cli_cooldown: {
+                type: "number",
+                default: 60
+            },
+            cli_authentication_timeout: {
+                type: "number",
+                default: 5000
+            },
+            cli_input_size: {
+                type: "bytes",
+                default: "1MB"
+            },
+            http_server: {
+                type: "boolean",
+                default: true
+            },
+            home_page: {
+                type: "boolean",
+                default: true
+            },
+            gui_host: {
+                type: "string",
+                default: "auto",
+                validator: v => {
+                    if(String(v).match(/^(\S+\.\D.+)|((\d{1,3}\.){3}\d{1,3})$/) || v === "localhost")
+                        return v;
+                    return "auto";
+                }
+            },
+            secure_gui: {
+                type: "boolean",
+                default: false
+            },
+            allowed_origins: {
+                type: "string",
+                default: ".*",
+                validator: v => String(v)
+            }
+        },
+        dir: {
+            database: {
+                type: "path",
+                default: "db"
+            },
+            logs: {
+                type: "path",
+                default: "logs"
+            }
+        },
+        persistent: {
+            enabled: {
+                type: "boolean",
+                default: true
+            },
+            backup_size_limit: {
+                type: "bytes",
+                default: "5MB"
+            },
+            backup_interval: {
+                type: "number",
+                default: 30000
+            },
+            snapshot_size_trigger: {
+                type: "bytes",
+                default: "10MB"
+            },
+            snapshot_interval: {
+                type: "number",
+                default: 0
+            }
+        },
+        meids: {
+            encrypt: {
+                type: "boolean",
+                default: false
+            },
+            encryption_cypher: {
+                type: "path",
+                default: "./db/snowflake.sfx"
+            },
+            recover: {
+                type: "boolean",
+                default: false
+            },
+            permission: {
+                type: "string",
+                default: "777",
+                validator: v => String(v).replace(/\D/g, "")
+            },
+            check_signature: {
+                type: "boolean",
+                default: false
+            },
+            count: {
+                type: "number",
+                default: 1
+            },
+            max_count: {
+                type: "number",
+                default: 32
+            },
+            size: {
+                type: "bytes",
+                default: "4GB"
+            }
+        },
+        memory: {
+            monitor: {
+                type: "boolean",
+                default: true
+            },
+            max_size: {
+                type: "bytes",
+                default: "1GB"
+            },
+            mb_mode: {
+                type: "boolean",
+                default: false
+            }
+        },
+        filesystem: {
+            name: {
+                type: "string",
+                default: "FAT32",
+                validator: v => {
+                    const fs = String(v).toUpperCase();
+                    return ["FAT32", "EXT4", "NTFS"].includes(fs) ? fs : "FAT32";
+                }
+            },
+            max_size: {
+                type: "bytes",
+                default: "4GiB"
+            }
+        }
     },
     help: {
         "invalid": [

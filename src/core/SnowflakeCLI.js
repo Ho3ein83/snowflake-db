@@ -1,5 +1,5 @@
 const Snowflake = require("./Snowflake");
-const SnowflakeEvents = require("./SnowflakeEvents");
+const snowflakeEvents = require("./SnowflakeEvents");
 const SnowflakeShell = require("./SnowflakeShell");
 const {v4: uuid4} = require("uuid");
 const {createServer} = require("net");
@@ -120,6 +120,12 @@ Alias: cls`,
             internal: true,
         });
 
+        // Logout from current session
+        this.command("logout", {
+            help: `Terminates current session and asks for another token if needed.`,
+            internal: true,
+        });
+
         // Exit the shell
         this.command("exit", {
             help: `Exit the shell
@@ -157,7 +163,8 @@ Usage: info [?FILTERS]
     [FILTERS]:
         * Optional
         * Default value: "all"
-        * Options: "database" or "db", "persistent", "memory" or "mem", "app", "server", "all" or "*"  
+        * Options: "database" or "db", "persistent",
+                   "memory" or "mem", "app", "server", "all" or "*"  
 
 Examples: info databases
           info db
@@ -165,6 +172,35 @@ Examples: info databases
           info persistent`,
             usage: "info [FILTERS]",
             internal: true
+        });
+
+        // Terminate current process
+        this.command("shutdown", {
+            help: `Shutdown the process and offload
+the database from memory.
+Usage: shutdown [?EXIT_CODE]
+    [EXIT_CODE]:
+    * Optional
+    * Description: The exit code of the process, the default is 0
+
+Examples: shutdown
+          shutdown 1`,
+            usage: "shutdown [?EXIT_CODE]",
+            internal: true,
+            validate: () => true,
+            exec: d => {
+
+                const { args, options } = d;
+
+                const exitCode = Math.max(parseInt(args[0] ?? 0) || 0);
+
+                Snowflake.logger.log(`Process termination was requested with exit code ${exitCode}`, null, "_system")
+
+                process.exit(exitCode);
+
+                return ["Finished", true, 0, false]; // message, value, statusCode, outputValue
+
+            }
         });
 
         // Assign aliases
@@ -183,16 +219,16 @@ Examples: info databases
      */
     #updateLockdown() {
         try {
-            const file_path = this.#lockdown_file;
+            const filePath = this.#lockdown_file;
             if (!this.lockedDown()) {
-                if (fs.existsSync(file_path))
-                    fs.rmSync(file_path);
+                if (fs.existsSync(filePath))
+                    fs.rmSync(filePath);
                 return this;
             }
-            fs.writeFileSync(file_path, JSON.stringify(this.#lockdown));
+            fs.writeFileSync(filePath, JSON.stringify(this.#lockdown));
         } catch (e) {
             if (Snowflake.logger)
-                Snowflake.logger.warning(".lockdown: " + e.toString());
+                Snowflake.logger.warning(".lockdown: " + e.toString(), false, "system");
             else
                 console.log(".lockdown: " + e.toString());
         }
@@ -328,6 +364,14 @@ Examples: info databases
 
         const memoryUsage = process.memoryUsage();
 
+        let persistentStatus = "%green%Saved";
+        if(Snowflake.core.isTakingSnapshot)
+            persistentStatus = "%blue%In progress";
+        else if(Snowflake.core.isUnsaved === null)
+            persistentStatus = "No changes";
+        else if(Snowflake.core.isUnsaved)
+            persistentStatus = "%orange%Unsaved (needs to call persistent)";
+
         // Mapping for categories and their corresponding data
         const categoryData = {
             server: [
@@ -335,8 +379,6 @@ Examples: info databases
                 {key: "Uptime", value: Snowflake.secondsToClockTime(process.uptime())},
                 {key: "Webserver Port", value: Snowflake.yaml.getInt("server.port")},
                 {key: "CLI Port", value: Snowflake.yaml.getInt("server.cli_port")},
-                {key: "Heap Total", value: Snowflake.formatBytes(memoryUsage.heapTotal, Snowflake.core.mbMode)},
-                {key: "Heap Used", value: Snowflake.formatBytes(memoryUsage.heapUsed, Snowflake.core.mbMode)}
             ],
             app: [
                 {key: "Application", value: "", divider: true, color: "cyan"},
@@ -352,12 +394,16 @@ Examples: info databases
             ],
             persistent: [
                 {key: "Persistent", value: "", divider: true, color: "cyan"},
-                {key: "Persistent Status", value: ((Snowflake.core.isUnsaved === null ? "No changes" : Snowflake.core.isUnsaved ? "%orange%Unsaved (needs to call persistent)" : "%green%Saved") + "%reset%")},
+                {key: "Persistent Status", value: persistentStatus + "%reset%"},
                 {key: "Last Persistent Call", value: Snowflake.core.lastPersistent > 0 ? Snowflake.sinceDate(Snowflake.core.lastPersistent) : "%faint%Never"},
             ],
             memory: [
                 {key: "Memory", value: "", divider: true, color: "cyan"},
                 {key: "Monitor", value: Snowflake.yaml.isTrue("memory.monitor") ? "%green%Enabled" : "%red%Disabled"},
+                // {key: "RSS", value: Snowflake.formatBytes(memoryUsage.rss, Snowflake.core.mbMode)},
+                {key: "Heap Total", value: Snowflake.formatBytes(memoryUsage.heapTotal, Snowflake.core.mbMode)},
+                {key: "Heap Used", value: Snowflake.formatBytes(memoryUsage.heapUsed, Snowflake.core.mbMode)},
+                // {key: "Buffers", value: Snowflake.formatBytes(memoryUsage.arrayBuffers, Snowflake.core.mbMode)},
             ]
         };
 
@@ -366,6 +412,11 @@ Examples: info databases
                 {key: "Max Memory", value: Snowflake.formatBytes(Snowflake.core.maxMemory, Snowflake.core.mbMode)},
                 {key: "Used Memory", value:  Snowflake.formatBytes(Snowflake.core.usedMemory, Snowflake.core.mbMode).replace(".00", "") + usedMemoryColor + ` (${usedMemoryInPercent}%)` + "%reset%" }
             );
+        }
+
+        if(Snowflake.yaml.changed){
+            categoryData.database.push({key: "Configuration", value: "", divider: true, color: "orange"});
+            categoryData.database.push({key: "Status", value: "Changed (restart required)", divider: false, color: "orange"});
         }
 
         // Handle wildcard alias
@@ -544,6 +595,64 @@ Examples: info databases
         return this;
     }
 
+    parseCommand(input, checkAlias = false, checkShortcut = false) {
+
+        const result = {
+            command: '',
+            args: [],
+            options: {},
+        };
+
+        if (checkShortcut)
+            input = this.parseShortcut(input);
+
+        const regex =
+            /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|--\S+=\S+|--\S+|-\S|\S+/g;
+
+        function unescapeQuoted(str) {
+            return str.slice(1, -1).replace(/\\(.)/g, '$1');
+        }
+
+        const tokens = input.match(regex) || [];
+
+        tokens.forEach(token => {
+            if (!result.command) {
+                result.command = checkAlias ? this.getOriginalCommand(token) : token;
+                return;
+            }
+
+            // --key=value
+            if (token.startsWith('--') && token.includes('=')) {
+                const [key, value] = token.slice(2).split(/=(.*)/s);
+                result.options[key] = value;
+                return;
+            }
+
+            // --key
+            if (token.startsWith('--')) {
+                result.options[token.slice(2)] = true;
+                return;
+            }
+
+            // -o
+            if (token.startsWith('-') && token.length === 2) {
+                result.options[token[1]] = true;
+                return;
+            }
+
+            // quoted argument
+            if (token[0] === '"' || token[0] === "'") {
+                result.args.push(unescapeQuoted(token));
+                return;
+            }
+
+            // plain argument
+            result.args.push(token);
+        });
+
+        return result;
+    }
+
     /**
      * Parses a command-line input string into a structured command with arguments and options.
      *
@@ -570,7 +679,7 @@ Examples: info databases
      *
      * @since 1.0.0
      */
-    parseCommand(input, checkAlias = false, checkShortcut = false) {
+    oldParseCommand(input, checkAlias = false, checkShortcut = false) {
         const result = {
             command: '',
             args: [],
@@ -583,6 +692,13 @@ Examples: info databases
         // Parse shortcuts if needed
         if(checkShortcut)
             input = this.parseShortcut(input);
+
+        function unescapeQuoted(str) {
+            const quote = str[0];
+            str = str.slice(1, -1); // remove quotes
+
+            return str.replace(/\\(.)/g, '$1');
+        }
 
         const matches = [...input.matchAll(regex)];
 
@@ -604,7 +720,6 @@ Examples: info databases
                 result.options[match[6]] = true;
             }
             else if (match[1] || match[2]) {
-                // Quoted argument (e.g., "arg with spaces")
                 result.args.push(match[1] || match[2]);
             }
             else if (match[7]) {
@@ -684,11 +799,11 @@ Examples: info databases
      * This method initializes and configures the CLI server, setting up event listeners
      * and handling connections, login attempts, and session management.
      *
-     * @param {number} cli_port - The port number on which the CLI TCP server should listen.
+     * @param {number} cliPort - The port number on which the CLI TCP server should listen.
      * @return {SnowflakeCLI} - The current instance of SnowflakeCLI for method chaining.
      * @since 1.0.0
      */
-    start(cli_port) {
+    start(cliPort) {
 
         try {
             if (fs.existsSync(this.#lockdown_file)) {
@@ -706,10 +821,12 @@ Examples: info databases
         this.#configs.authentication_timeout = Math.max(Snowflake.yaml.getInt("server.cli_authentication_timeout"), 1000);
         this.#configs.max_login_attempt = Math.max(Snowflake.yaml.getInt("server.max_cli_login_attempt"), 0);
 
-        Snowflake.logger.log("%cyan%[CLI] Starting TCP server for CLI...");
-        SnowflakeEvents.emit("cli_server_before_init");
+        Snowflake.logger.log("%cyan%[CLI] Starting TCP server for CLI...", null, "cli");
 
-        SnowflakeEvents.on("cli_server_connection_error", args => {
+        // [SnowflakeEventEmit]: cli_server_before_init
+        snowflakeEvents.emit("cli_server_before_init");
+
+        snowflakeEvents.on("cli_server_connection_error", args => {
             /**
              * @type {SnowflakeShell}
              */
@@ -719,7 +836,7 @@ Examples: info databases
                 shell.socket.end();
         });
 
-        SnowflakeEvents.on("cli_server_connection_end", args => {
+        snowflakeEvents.on("cli_server_connection_end", args => {
             /**
              * @type {SnowflakeShell}
              */
@@ -730,41 +847,57 @@ Examples: info databases
                     this.#sessions.set(shell.token, Math.max(this.#sessions.get(shell.token) - 1, 0));
             }
 
-            Snowflake.logger.log(`%orange%[CLI]%reset% Client %underline%${shell.uuid}%reset% disconnected.`);
+            Snowflake.logger.log(`%orange%[CLI]%reset% Client %underline%${shell.uuid}%reset% disconnected.`, null, "cli");
             if (this.#configs.log_connections) {
                 const log = `[${Snowflake.logger.getTime()}] [LEAVE], Client '${shell.uuid}' disconnected.` + "\n";
                 Snowflake.logger.logFile(log, "connections", true);
             }
         });
 
-        SnowflakeEvents.on("cli_server_login_attempt", args => {
+        snowflakeEvents.on("cli_server_login_attempt", args => {
+
             /**
              * @type {SnowflakeShell}
              */
             const shell = args.shell;
             const {success, token, cause} = args;
-            if (this.#configs.max_login_attempt > 0) {
-                if (!success) {
+
+            if(this.#configs.max_login_attempt > 0) {
+
+                if(!success) {
+
                     const subject = this.#configs.lockdown === "ip" ? shell.socket.remoteAddress : token;
-                    if (subject || typeof subject === "string") {
+
+                    if(subject || typeof subject === "string") {
                         if (typeof this.#lockdown[subject] !== "object")
                             this.#lockdown[subject] = {}
                         this.#lockdown[subject]["time"] = Snowflake.now(false) + this.#configs.cooldown * 1000;
                         this.#lockdown[subject]["attempts"] = (this.#lockdown[subject]?.attempts || 0) + 1;
                     }
-                    if (cause === "lockdown")
+
+                    if(cause === "lockdown")
                         this.#updateLockdown();
+
                 }
+
             }
-            if (this.#configs.log_logins) {
-                const log = `[${Snowflake.logger.getTime()}] ${success ? "Succeed" : "Failed"}, ` +
-                    `Token: '${token}', IP: ${shell.socket.remoteAddress || "N/A"}${cause ? `, Cause: ${cause}` : ""}` +
+
+            if(this.#configs.log_logins) {
+
+                // Fetch the access token from application configuration
+                const authentication = Snowflake.authenticateToken(token);
+
+                const log = `[${Snowflake.logger.getTime()}] [${success ? "SUCCESS" : "FAIL"}], ` +
+                    `Token: '${authentication ? authentication.alias : token}', IP: ${shell.socket.remoteAddress || "N/A"}${cause ? `, Cause: ${cause}` : ""}` +
                     `, UUID: ${shell.uuid}` + "\n";
+
                 Snowflake.logger.logFile(log, "logins", true);
+
             }
+
         });
 
-        SnowflakeEvents.on("cli_server_shell_authorized", args => {
+        snowflakeEvents.on("cli_server_shell_authorized", args => {
             const {token} = args;
             if (this.#sessions.has(token))
                 this.#sessions.set(token, this.#sessions.get(token) + 1);
@@ -785,30 +918,36 @@ Examples: info databases
             const uuid = uuid4().toString();
             this.#connections.set(shell.uuid, shell);
 
-            Snowflake.logger.log(`%blue%[CLI]%reset% Client connected with UUID %underline%${uuid}`);
+            Snowflake.logger.log(`%blue%[CLI]%reset% Client connected with UUID %underline%${uuid}`, null, "cli");
 
             if (this.#configs.log_connections) {
                 const log = `[${Snowflake.logger.getTime()}] [JOIN], Client connected with UUID '${uuid}', IP: ${shell.socket.remoteAddress || "N/A"}` + "\n";
                 Snowflake.logger.logFile(log, "connections", true);
             }
 
-            SnowflakeEvents.emit("cli_server_connection", shell);
+            // [SnowflakeEventEmit]: cli_server_connection @ {shell:SnowflakeShell}
+            snowflakeEvents.emit("cli_server_connection", shell);
 
         });
 
         server.on("error", e => {
-            Snowflake.logger.assert(e.toString(), 1, "CLI");
+            Snowflake.logger.assert(e.toString(), 1, "CLI", "_cli");
         });
 
-        server.listen(cli_port, () => {
-            Snowflake.logger.log(`%green%[CLI] CLI server started on port ${cli_port} over TCP protocol.`);
-            Snowflake.logger.log(`%green%- You can connect to the CLI using \`nc [cli-host] [cli-port]\` command, e.g: \`nc 127.0.0.1 ${cli_port}\``);
-            SnowflakeEvents.emit("cli_server_after_listen");
+        server.listen(cliPort, () => {
+
+            Snowflake.logger.log(`%cyan%[CLI] CLI server started on port ${cliPort} over TCP protocol.`, null, "cli");
+            Snowflake.logger.log(`%cyan%- You can connect to the CLI using \`nc [cli-host] [cli-port]\` command, e.g: \`nc 127.0.0.1 ${cliPort}\``, null, "cli");
+
+            // [SnowflakeEventEmit]: cli_server_after_listen
+            snowflakeEvents.emit("cli_server_after_listen");
+
         });
 
         this.#tcp = server;
 
         return this;
+
     }
 
     /**
@@ -827,6 +966,14 @@ Examples: info databases
         if (this.#sessions.has(token))
             return this.#sessions.get(token);
         return 0;
+    }
+
+    async terminate() {
+
+        this.#connections.forEach(conn => conn.exit(0));
+
+        await this.#tcp.close();
+
     }
 
     /**

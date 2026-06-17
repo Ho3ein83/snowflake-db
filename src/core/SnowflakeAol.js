@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const Snowflake = require("./Snowflake");
+const snowflakeEvents = require("./SnowflakeEvents");
 
 /**
  * @class SnowflakeAol
@@ -36,6 +37,20 @@ class SnowflakeAol {
      * @since 1.0.0
      */
     fileSizeLimit = null;
+
+    /**
+     * The limit for backup files before automatic snapshot gets triggered
+     * @type {number}
+     * @since 1.0.0
+     */
+    snapshotSizeTrigger = 0;
+
+    /**
+     * The callback to trigger snapshot
+     * @type {null|function}
+     * @since 1.0.0
+     */
+    triggerSnapshotCallback = null;
 
     /**
      * Current backup file name, it will be changed when the backup file get removed or exceed the file size limit.
@@ -95,16 +110,33 @@ class SnowflakeAol {
     mbMode = false;
 
     /**
+     * Whether there is any backup process running
+     * @type {boolean}
+     * @since 1.0.0
+     */
+    #takingBackup = false;
+
+    /**
      * @param {string} databasePath - Database directory path that backup files will be stored
      * @param {null|string|number} permission - Backup files permission, see `fs.chmodSync` second parameter
      * @param {null|number} maxFileSize - The max allowed file size for backup files, if a file gets to this limit,
      * all remaining backups will be written to another backup file, set it to 0 for no limit
      * @param {null|number} backupInterval - Set the backup interval, pass null to never get a backup automatically
      * @param {boolean} megaBinaryMode - Whether to use mega-binary mode for displaying file sizes
+     * @param {number|string} snapshotSizeTrigger - The limit for backup files before automatic snapshot gets triggered
+     * @param {null|function} triggerSnapshotCallback - The callback to trigger snapshot
      * @see fs.chmodSync
      * @since 1.0.0
      */
-    constructor({ databasePath,permission = null,maxFileSize = null,backupInterval = null,megaBinaryMode = false }) {
+    constructor({
+                    databasePath,
+                    permission = null,
+                    maxFileSize = null,
+                    backupInterval = null,
+                    megaBinaryMode = false,
+                    snapshotSizeTrigger = 0,
+                    triggerSnapshotCallback = null
+                }) {
 
         this.path = databasePath;
 
@@ -116,6 +148,13 @@ class SnowflakeAol {
 
         if(permission)
             this.filePermission = permission;
+
+        if(typeof triggerSnapshotCallback === "function")
+            this.triggerSnapshotCallback = triggerSnapshotCallback;
+        else
+            this.triggerSnapshotCallback = null;
+
+        this.snapshotSizeTrigger = Snowflake.convertSize(snapshotSizeTrigger, "B", megaBinaryMode);
 
         this.mbMode = megaBinaryMode;
 
@@ -255,6 +294,20 @@ class SnowflakeAol {
         });
 
         return getLines ? encoded : encoded.join('\n');
+    }
+
+    /**
+     * You can use Snowflake AOL format as a data-interchangeable format like JSON.
+     * To parse your instructions use this method. Not that comments still work and remove instructions will be ignored
+     * @param {string} input
+     * Input string
+     * @returns {any}
+     * @since 1.0.0
+     */
+    static decodeSets(input){
+        const data = SnowflakeAol.parseInstructions(input)
+            .filter(data => typeof data === "object");
+        return Object.assign(...data);
     }
 
     /**
@@ -399,6 +452,15 @@ class SnowflakeAol {
     }
 
     /**
+     * Rotate to the next backup file and recreate the write stream
+     * @since 1.0.0
+     */
+    rotateAndRemake(){
+        this.rotate();
+        this.#make();
+    }
+
+    /**
      * Close any previous write streams and create a new one
      * @param {string} flags - Flags of the write stream
      * @return {Promise<void>}
@@ -437,6 +499,26 @@ class SnowflakeAol {
 
     }
 
+    checkTotalBackupSize(){
+
+        if(this.snapshotSizeTrigger <= 0)
+            return;
+
+        let totalSize = 0;
+        Snowflake.globFiles(this.path, /^(\d+\.\d+\.sfb)$/, filePath => {
+            totalSize += fs.statSync(filePath).size;
+        });
+
+        if(totalSize >= this.snapshotSizeTrigger)
+            this.triggerSnapshot();
+
+    }
+
+    triggerSnapshot(){
+        if(typeof this.triggerSnapshotCallback === "function")
+            this.triggerSnapshotCallback();
+    }
+
     /**
      * Start AOL worker
      * @since 1.0.0
@@ -445,8 +527,21 @@ class SnowflakeAol {
         this.rotate();
         this.#make();
 
-        if (this.currentFilename)
-            this.#jobs();
+        if(this.currentFilename)
+            this.#schedule();
+    }
+
+    /**
+     * Update and get the size of current backup file
+     * @return {number}
+     * @since 1.0.0
+     */
+    updateFileSize(){
+        let size = 0;
+        try {
+            size = fs.statSync(this.filePath).size;
+        } catch (e){}
+        return this.fileSize = size;
     }
 
     /**
@@ -468,7 +563,7 @@ class SnowflakeAol {
                 fs.writeFileSync(this.filePath, "");
 
             // Get the size of current backup file
-            this.fileSize = fs.statSync(this.filePath).size;
+            this.updateFileSize();
 
             // Change the file permissions to desired value in `configs.yaml`
             if (this.filePermission)
@@ -481,76 +576,157 @@ class SnowflakeAol {
     }
 
     /**
-     * Start the worker jobs and schedule them if needed
+     * Dump queue into backup files if possible
+     * @param {null|((backupSkipped: boolean) => void)} onEnd - The callback to be called after backup process
+     * was finished, pass null for no callback. If a function was given, the first argument indicates the status of
+     * backup operation, if `true` means the backup was skipped otherwise the backup was taken.
+     * @return {Promise<void>}
      * @since 1.0.0
      */
-    #jobs() {
+    async #takeBackup(onEnd = null){
 
-        const handleJobs = async () => {
+        function handleEnd(backupSkipped){
 
-            // Renew the timeout
-            const renew = () => this.#backupTimeout = setTimeout(handleJobs, this.#backupInterval)
-
-            // Prevent vain write attempts when no changes are made
-            // Skip empty queue
-            if (!this.instructionsChanged || !Object.keys(this.#queue).length) {
-                renew();
-                return;
+            if(backupSkipped) {
+                // [SnowflakeEventEmit]: backup_skipped
+                snowflakeEvents.emit("backup_skipped");
+            }
+            else{
+                // [SnowflakeEventEmit]: backup_done
+                snowflakeEvents.emit("backup_done");
             }
 
-            // Keep queue before clearing it
-            const queue = this.#queue;
+            onEnd?.(backupSkipped);
 
-            // Clear queue to prevent new changes while writing the file
-            this.#queue = [];
+        }
 
-            // Data to write
-            const lines = SnowflakeAol.encodeQueue(queue, true);
+        // [SnowflakeEventEmit]: before_backup
+        snowflakeEvents.emit("before_backup");
 
-            const limit = Snowflake.formatBytes(this.fileSizeLimit, this.mbMode, this.fileSizeLimit > 1000 ? 2 : 0);
+        // Do not take any backups when:
+        // 1. The queue is empty
+        // 2. No change was made since the last backup
+        // 3. Already a backup process is running
+        if (!this.instructionsChanged || Object.keys(this.#queue).length <= 0 || this.#takingBackup) {
+            handleEnd(true);
+            return;
+        }
 
-            await this.makeWriteStream("a");
+        this.#takingBackup = true;
 
-            let blockSize = this.fileSize;
+        // [SnowflakeEventEmit]: backup_start
+        snowflakeEvents.emit("backup_start");
 
-            for (let line of lines) {
+        // Keep queue before clearing it
+        const queue = this.#queue;
 
-                if (this.writeStream) {
+        // Empty the queue for new changes during backup process
+        this.#queue = [];
 
-                    blockSize += line.length + 1; // Line size + break line
+        // Data to write
+        const lines = SnowflakeAol.encodeQueue(queue, true);
 
-                    if (this.fileSizeLimit > 0 && blockSize > this.fileSizeLimit) {
-                        const written = Snowflake.formatBytes(blockSize, this.mbMode, blockSize > 1000 ? 2 : 0);
-                        console.log(`\x1b[38;5;220m[BACKUP] Backup file size limit (${limit}) exceeded, rotating to the next file. ${written} was written to the file.\x1b[0m`);
-                        this.rotate();
-                        this.#make();
-                        await this.makeWriteStream("a");
-                        blockSize = this.fileSize;
-                    }
+        // Formatted backup limit size
+        const limit = Snowflake.formatBytes(this.fileSizeLimit, this.mbMode, this.fileSizeLimit > 1000 ? 2 : 0);
 
-                    const canWrite = this.writeStream.write(line + "\n");
+        // Create a write stream for the backup file
+        await this.makeWriteStream("a");
 
-                    if (!canWrite) {
+        // Get the file size from filesystem
+        let blockSize = this.updateFileSize();
 
-                        await new Promise(resolve => {
-                            const drained = () => {
-                                this.writeStream.off("drain", drained);
-                                resolve();
-                            };
-                            this.writeStream.on("drain", drained);
-                        });
+        for (let line of lines) {
 
-                    }
+            if (this.writeStream) {
+
+                // New size (line size + break line)
+                const lineSize = line.length + 1;
+
+                // If the line size alone is larger than the limit
+                if(lineSize > this.fileSizeLimit){
+                    console.log(`\x1b[31m[BACKUP] Instruction size is larger than 'persistent.backup_size_limit', backup failed.\x1b[0m`);
+                    break;
+                }
+
+                // If size limit is set, and the new line can overflow this limit
+                if (this.fileSizeLimit > 0 && blockSize + lineSize > this.fileSizeLimit) {
+
+                    // Format the written bytes
+                    const written = Snowflake.formatBytes(blockSize, this.mbMode, blockSize > 1000 ? 2 : 0);
+                    console.log(`\x1b[38;5;220m[BACKUP] Backup file size limit (${limit}) exceeded, rotating to the next file. ${written} was written to the file.\x1b[0m`);
+
+                    // Rotate to the next backup file
+                    this.rotate();
+
+                    // Initialize the backup file
+                    this.#make();
+
+                    // Create new write stream for the new file
+                    await this.makeWriteStream("a");
+
+                    // Reset block size (it's 0 for all new files, but safer to get from the filesystem)
+                    blockSize = this.fileSize;
+
+                }
+
+                // Increase the block size by line size
+                blockSize += lineSize;
+
+                // Try to append the new line to current backup file (last created write stream)
+                const canWrite = this.writeStream.write(line + "\n");
+
+                // Failed to write
+                if (!canWrite) {
+
+                    await new Promise(resolve => {
+                        const drained = () => {
+                            this.writeStream.off("drain", drained);
+                            resolve();
+                        };
+                        this.writeStream.on("drain", drained);
+                    });
 
                 }
 
             }
 
-            this.endWriteStream().then(() => renew());
+        }
+
+        // After closing the write stream, renew the backup interval
+        this.endWriteStream().then(() => {
+            this.#takingBackup = false;
+            handleEnd(false);
+        });
+
+    }
+
+    /**
+     * Start the worker jobs and schedule them if needed
+     * @since 1.0.0
+     */
+    #schedule() {
+
+        const handleJobs = async () => {
+
+            // Re-schedule the backup
+            const renew = () => {
+
+                // Schedule the backup
+                this.#backupTimeout = setTimeout(handleJobs, this.#backupInterval);
+
+                // Re-calculate backup files size and trigger snapshot if needed
+                this.checkTotalBackupSize();
+
+            }
+
+            // Take the backup (if possible)
+            await this.#takeBackup(renew);
 
         }
 
-        this.#backupTimeout = setTimeout(handleJobs, this.#backupInterval);
+        // Backup is not scheduled (persistent.backup_interval is 0)
+        if(this.#backupInterval > 0)
+            this.#backupTimeout = setTimeout(handleJobs, this.#backupInterval);
 
     }
 

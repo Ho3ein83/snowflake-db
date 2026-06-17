@@ -1,7 +1,7 @@
 const fs = require("fs");
 const Snowflake = require("./Snowflake");
 const crypto = require("crypto");
-const appConfig = require("../../app.json");
+const snowflakeEvents = require("./SnowflakeEvents");
 
 const HEADER_LENGTH = 32;
 const KEY_LENGTH = 32;
@@ -56,7 +56,7 @@ class SnowflakeCypher {
 
         this.#cypherPath = cypherPath;
 
-        this.#cypherSalt = appConfig.encryption_salt;
+        this.#cypherSalt = Snowflake.config.encryption_salt;
 
     }
 
@@ -65,13 +65,21 @@ class SnowflakeCypher {
      * @since 1.0.0
      */
     init() {
+
         const errors = this.makeCypherKeyFromFile(this.#cypherPath);
-        if (errors !== true) {
+
+        if(errors !== true) {
+
             const help = `Check theses for fix:\n- You can delete the key file from %underline%${this.#cypherPath}%no_underline% to regenerate\n` +
                 "- If you need your own key, edit the key file as text and place your key in it.\n" +
                 "- Make sure the key is at least 32 characters long when editing as text";
-            Snowflake.logger.assert(errors + "\n" + help, 1, "ENCRYPT");
+
+            Snowflake.logger.assert(errors + "\n" + help, 1, "ENCRYPT", "cypher");
+
         }
+
+        // [SnowflakeEventEmit]: cypher_initialized
+        snowflakeEvents.emit("cypher_initialized");
 
     }
 
@@ -106,7 +114,7 @@ class SnowflakeCypher {
 
         // Write buffer to file
         fs.writeFileSync(filePath, buffer);
-        Snowflake.logger.log("%green%[ENCRYPT] Cypher key file generated.");
+        Snowflake.logger.log("%green%[ENCRYPT] Cypher key file generated.", null, "cypher");
 
         return true;
     }
@@ -139,7 +147,7 @@ class SnowflakeCypher {
 
         this.#cypherAlgorithm = algoNum;
         if (Snowflake.isDevelopment)
-            Snowflake.logger.log(`%magenta%[ENCRYPT] Using ${ALGORITHMS[algoNum]} algorithm for encryption`);
+            Snowflake.logger.log(`%magenta%[ENCRYPT] Using ${ALGORITHMS[algoNum]} algorithm for encryption`, null, "cypher");
 
         // Check key length (should be 32 bytes)
         const key = buffer.subarray(HEADER_LENGTH, HEADER_LENGTH + KEY_LENGTH);
@@ -173,7 +181,7 @@ class SnowflakeCypher {
             if (errors !== true)
                 return errors;
 
-            Snowflake.logger.log("%green%[ENCRYPT] Cypher key binary file validated.");
+            Snowflake.logger.log("%green%[ENCRYPT] Cypher key binary file validated.", null, "cypher");
 
             // Extract the key
             this.#cypherKey = content.subarray(HEADER_LENGTH, TOTAL_LENGTH);
@@ -186,7 +194,7 @@ class SnowflakeCypher {
             if (textContent.length < KEY_LENGTH)
                 return `Text file content is less than ${KEY_LENGTH} characters.`;
 
-            Snowflake.logger.log("%green%[ENCRYPT] Cypher key text file validated.");
+            Snowflake.logger.log("%green%[ENCRYPT] Cypher key text file validated.", null, "cypher");
 
             // Generate binary file with first 32 bytes of the string as key
             const keyString = textContent.slice(0, KEY_LENGTH);
@@ -210,7 +218,7 @@ class SnowflakeCypher {
 
             // Overwrite file with binary content
             fs.writeFileSync(filePath, buffer);
-            Snowflake.logger.log("%blue%[ENCRYPT] Converted text file to binary cypher key file.");
+            Snowflake.logger.log("%blue%[ENCRYPT] Converted text file to binary cypher key file.", null, "cypher");
 
             this.#cypherKey = Buffer.from(keyString);
         }

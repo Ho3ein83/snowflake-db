@@ -10,12 +10,12 @@
             "prefix": "snowflake_",
             "default_language": "en",
             "default_theme_mode": "light",
-            // Just for development and debug
-            "render_logs": true,
-            // Token expiration in seconds, set it to 0 for no expiration (no recommended)
+            // Just for development and debug. By setting it to true, you can see which pages and parts are being rendered.
+            "render_logs": false,
+            // Token expiration in seconds, set it to 0 for no expiration (not recommended)
             // Note: The expiration is only in your browser and after the token expired you can use it again the next time
-            // you want to log in. Also, if the token gets expired while using the app it won't shut you down and you
-            // can still do what you were doing, until you refresh the page and it'll ask you again for access token.
+            // you want to log in. Also, if the token gets expired while using the app it won't shut you down, and you
+            // can still do what you were doing, until you refresh the page, and it'll ask you again for access token.
             "access_key_expiration": 86400, // 1 day
             // The lower the refresh interval is, the lower your server traffic will be, set it to 0 to disable auto-refreshing
             "refresh_interval": {
@@ -31,8 +31,8 @@
             }
         };
     </script>
-  <script type="module" crossorigin src="./assets/index-4JtCxBBO.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DcLFrmgp.css">
+  <script type="module" crossorigin src="./assets/index-ip27OAvY.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BnIqQMT9.css">
 </head>
 <body>
     <div id="root"></div>

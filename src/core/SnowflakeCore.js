@@ -1,9 +1,9 @@
 const Snowflake = require("./Snowflake");
-const SnowflakeEvents = require("./SnowflakeEvents");
+const snowflakeEvents = require("./SnowflakeEvents");
 const path = require("path");
 const fs = require("fs");
 const { Worker } = require("worker_threads");
-const appConfig = require("../../app.json");
+// const appConfig = require("../../app.json");
 const util = require("util");
 
 /**
@@ -136,8 +136,9 @@ class SnowflakeCore {
     #lookup = {
         key: {},
         value: {},
-        hashMap: {}, // For faster hash lookup for keys
-        trash: []
+        hashMap: {}, // Faster lookup for keys hash
+        trash: [],
+        temps: new Set()
     };
 
     /**
@@ -201,7 +202,7 @@ class SnowflakeCore {
 
     /**
      * The list of available workers
-     * @type {{aol: import("worker_threads").Worker|null}}
+     * @type {{aol: Worker|null}}
      * @since 1.0.0
      */
     #workers = {
@@ -209,28 +210,50 @@ class SnowflakeCore {
     };
 
     /**
-     * Pending threads that are waiting for AOL workers to handle.
+     * Pending requests that are waiting for AOL workers to handle.
      * To prevent memory leakage, requests to AOL worker gets added to the queue and called as soon as possible.
      * @type {Map<string, {resolve: function, reject: function, timeout: NodeJS.Timeout}>}
      * @since 1.0.0
      */
     #pendingAolRequests = new Map();
 
+    /**
+     * Snapshot interval
+     * @type {NodeJS.Timeout}
+     * @since 1.0.0
+     */
+    #snapshotInterval = null;
+
+    /**
+     * Current state of snapshot operation, if a snapshot operation is in progress, it'll be `true`, otherwise `false`.
+     * @type {boolean}
+     * @since 1.0.0
+     */
+    #takingSnapshot = false;
+
+    /**
+     * Current state of backup restoration operation, if a backup restoration operation is in progress, it'll be
+     * `true`, otherwise `false`.
+     * @type {boolean}
+     * @since 1.0.0
+     */
+    #restoringBackups = false;
+
     constructor(){}
 
     /**
      * Create a 256 bit hash using SHA-256 algorithm
      * @param {string} key - String or the key you want to hash
-     * @param {boolean} use_cache - Whether to use cache or always calculate the hash, by enabling it, you can reduce
+     * @param {boolean} useCache - Whether to use cache or always calculate the hash, by enabling it, you can reduce
      * your system load.
      * @return {string|Buffer|Hash|*}
      */
-    #sha256(key, use_cache=true){
-        if(use_cache && typeof this.#cache[`key_hash_${key}`] !== "undefined") {
+    #sha256(key, useCache=true){
+        if(useCache && typeof this.#cache[`key_hash_${key}`] !== "undefined") {
             return this.#cache[`key_hash_${key}`];
         }
         const hash = Snowflake.sha256(key, true);
-        if(use_cache)
+        if(useCache)
             this.#cache[`key_hash_${key}`] = hash;
         return hash;
     }
@@ -328,7 +351,7 @@ class SnowflakeCore {
      * @since 1.0.0
      */
     validateHeaders(){
-        Snowflake.logger.log("%blue%Validating headers...");
+        Snowflake.logger.log("%blue%Validating headers...", null, "database");
 
         // Default header is considered a valid header and other files should match this
         const validHeader = this.getHeader();
@@ -409,37 +432,37 @@ class SnowflakeCore {
         Snowflake.logger.table(table, 3, "clear", "-", 3);
 
         if(!is_valid) {
-            Snowflake.logger.log("");
-            Snowflake.logger.assert("Your database files are invalid, check your configuration file or read the documentation for more details.\n" + Snowflake.help.invalid.join("\n"));
+            Snowflake.logger.log("", null, "database");
+            Snowflake.logger.assert("Your database files are invalid, check your configuration file or read the documentation for more details.\n" + Snowflake.help.invalid.join("\n"), 1, false, "_database");
         }
         return this;
     }
 
     /**
      * Get database files (MEIDs and keys)
-     * @return {{meids_files: *[], keys_files: *[], backup_files: *[]}}
+     * @return {{meidFiles: array, keyFiles: array, backupFiles: array}}
      * @since 1.0.0
      */
     getDatabaseFiles(){
-        let meids_files = [], keys_files = [], backup_files = [];
+        let meidFiles = [], keyFiles = [], backupFiles = [];
 
         // MEIDs file format is .sfd and keys file format is .sfk
         // const file_pattern = new RegExp(/^(key|meid)-\d+\.(sfd|sfk)$/);
-        const file_pattern = new RegExp(/^(meid-\d+\.sfd|key-\d+\.sfk|(\d+\.\d+\.sfb))$/);
+        const filePattern = new RegExp(/^(meid-\d+\.sfd|key-\d+\.sfk|(\d+\.\d+\.sfb))$/);
 
         // Iterate every file in the database directory
-        for(let file_name of fs.readdirSync(this.#dbPath)){
+        for(let fileName of fs.readdirSync(this.#dbPath)){
             // If the file is either a key file or a MEID
-            if(file_pattern.test(file_name)) {
-                if(file_name.startsWith("meid-"))
-                    meids_files.push(file_name);
-                else if(file_name.startsWith("key-"))
-                    keys_files.push(file_name);
+            if(filePattern.test(fileName)) {
+                if(fileName.startsWith("meid-"))
+                    meidFiles.push(fileName);
+                else if(fileName.startsWith("key-"))
+                    keyFiles.push(fileName);
                 else
-                    backup_files.push(file_name);
+                    backupFiles.push(fileName);
             }
         }
-        return { meids_files, keys_files, backup_files };
+        return { meidFiles, keyFiles, backupFiles };
     }
 
     /**
@@ -467,8 +490,11 @@ class SnowflakeCore {
         const buffer = fs.readFileSync(filePath);
         Snowflake.logger.benchmark("--- Read " + (isMeid ? `meid-${index}.sfd` : `key-${index}.sfk`) + " file", timerId);
 
+        const totalSize = buffer.length;
+        // let parsedSize = Number(0);
+
         // If the file isn't empty (the first 32 bytes are header data)
-        if (buffer.length >= 32) {
+        if(totalSize >= 32) {
 
             // Start after the header
             let pos = 32;
@@ -561,109 +587,6 @@ class SnowflakeCore {
         return buffer.length;
 
     }
-
-    /*loadDatabaseFile(filePath, isMeid){
-
-        const index = parseInt(path.basename(filePath).replace("meid-", "").replace("key-", ""));
-
-        const timerId = Snowflake.logger.timeStart();
-        const buffer = fs.readFileSync(filePath);
-        Snowflake.logger.benchmark("--- Read " + (isMeid ? `meid-${index}.sfd` : `key-${index}.sfk`) + " file", timerId);
-
-        // If the file isn't empty (the first 32 bytes are header data)
-        if (buffer.length >= 32) {
-
-            // Start after the header
-            let pos = 32;
-
-            const header = buffer.subarray(0, 32);
-
-            // Check if the file is encrypted
-            const isEncrypted = header.subarray(Snowflake.HDR_POS.ENCRYPTION, Snowflake.HDR_POS.ENCRYPTION + Snowflake.HDR_SIZE.ENCRYPTION).readUint8(0) > 0;
-
-            if(isEncrypted && !this.#dbEncrypt){
-                Snowflake.logger.assert("Some or all of your database files are encrypted, but encryption is disabled in 'configs.yaml' file.\n" +
-                    "To disable encryption you need to set both 'meids.encrypt' and 'meids.recover' to 'true' and then restart the app.");
-            }
-
-            if (isMeid) {
-
-                // Iterate each block
-                while (pos < buffer.length) {
-
-                    // Start position of the entry
-                    const position = pos;
-
-                    // The first 32-byte of the block is the hash
-                    const hash = buffer.subarray(pos, pos + 32);
-                    pos += 32;
-
-                    // The next 4-byte is key size (in bytes)
-                    const size = buffer.subarray(pos, pos + 4).readUInt32BE();
-                    pos += 4;
-
-                    // Get the value based on its size
-                    let valueBuffer = buffer.subarray(pos, pos + size);
-
-                    // Decrypt data based on the given key and salt
-                    if(isEncrypted)
-                        valueBuffer = Snowflake.cypher.decrypt(valueBuffer, pos);
-
-                    // Decode the key
-                    const value = Snowflake.fromBuffer(valueBuffer);
-
-                    pos += size;
-
-                    // Set the value into lookup table
-                    this.#setLookupValue(hash, value, index, size, position);
-
-                }
-
-            }
-            else {
-
-                // Iterate each block
-                while (pos < buffer.length) {
-
-                    // Start position of the entry
-                    const position = pos;
-
-                    // The first 32-byte of the block is the hash
-                    const hash = buffer.subarray(pos, pos + 32);
-                    pos += 32;
-
-                    // The next 4-byte is key size (in bytes)
-                    const size = buffer.subarray(pos, pos + 4).readUInt32BE();
-                    pos += 4;
-
-                    // Get the key based on its size
-                    let keyBuffer = buffer.subarray(pos, pos + size);
-
-                    // Decrypt data based on the given key and salt
-                    if(isEncrypted)
-                        keyBuffer = Snowflake.cypher.decrypt(keyBuffer, pos);
-
-                    // Decode the key
-                    const key = Snowflake.fromBuffer(keyBuffer);
-                    pos += size;
-
-                    // Double-check the hash to check if the key is valid
-                    if (Snowflake.sha256(this.sanitizeKey(key), true).compare(hash) === 0) {
-
-                        // Add it to the lookup table
-                        this.#setLookupKey(key, index, size, position, hash);
-
-                    }
-
-                }
-
-            }
-
-        }
-
-        return buffer.length;
-
-    }*/
 
     /**
      * Unload database from memory and reset to initial states
@@ -699,12 +622,13 @@ class SnowflakeCore {
     /**
      * Reload the database
      * @param {boolean|number} restoreBackups - Whether to restore backup files (false) or skip them (1 or true) or
+     *     delete them (2)
      * @since 1.0.0
      */
     reloadDatabase(restoreBackups = true){
 
-        // Trigger the event
-        SnowflakeEvents.emit("core_before_database_reload");
+        // [SnowflakeEventEmit]: before_database_reload
+        snowflakeEvents.emit("before_database_reload");
 
         // Remove database info from memory first
         this.unloadDatabase();
@@ -715,17 +639,25 @@ class SnowflakeCore {
         // Reload the database files
         this.loadDatabase(restoreBackups);
 
-        // Trigger the finalization event
-        SnowflakeEvents.emit("core_after_database_reload");
+        // [SnowflakeEventEmit]: after_database_reload
+        snowflakeEvents.emit("after_database_reload");
 
     }
 
     /**
      * Make memory data persistent by dumping the entries from memory to MEID files
-     * @return {Promise<void>}
+     * @returns {Promise<never>}
      * @since 1.0.0
      */
-    async persistent() {
+    async persistent(){
+
+        if(this.#takingSnapshot)
+            return Promise.reject("Another snapshot is in progress");
+
+        // [SnowflakeEventEmit]: before_snapshot
+        snowflakeEvents.emit("before_snapshot");
+
+        this.#takingSnapshot = true;
 
         let maxMeids = this.meidsCount,
             maxMeidSize = this.maxMeidSize;
@@ -753,10 +685,10 @@ class SnowflakeCore {
             if (limitReached || maximumReached) {
 
                 if(limitReached) {
-                    Snowflake.logger.log("%yellow%Warning: data size is bigger than allowed size, " + ((i < maxMeids) ? "skipping to the next database file." : `${pendingList.size} entries were left without saving since there is no other database file.`));
+                    Snowflake.logger.log("%yellow%Warning: data size is bigger than allowed size, " + ((i < maxMeids) ? "skipping to the next database file." : `${pendingList.size} entries were left without saving since there is no other database file.`), null, "_database");
                 }
                 else if(maximumReached) {
-                    Snowflake.logger.log("%yellow%Warning: data size is bigger than allowed files size in your filesystem, " + (i < maxMeids ? "skipping to the next database file." : `${pendingList.size} entries were left without saving since there is no other database file.`));
+                    Snowflake.logger.log("%yellow%Warning: data size is bigger than allowed files size in your filesystem, " + (i < maxMeids ? "skipping to the next database file." : `${pendingList.size} entries were left without saving since there is no other database file.`), null, "_database");
                 }
 
                 limitReached = false;
@@ -778,12 +710,12 @@ class SnowflakeCore {
 
             // Check the write permissions
             if (!Snowflake.canReadWrite(databaseFilePath)) {
-                Snowflake.logger.error(`Data persistence operation failed: the database file (meid-${i}.sfd) is missing or lacks required write permissions.`);
+                Snowflake.logger.error(`Data persistence operation failed: the database file (meid-${i}.sfd) is missing or lacks required write permissions.`, false, "_database");
                 continue;
             }
 
             if (!Snowflake.canReadWrite(keyFilePath)) {
-                Snowflake.logger.error(`Data persistence operation failed: the database key file (key-${i}.sfk) is missing or lacks required write permissions.`);
+                Snowflake.logger.error(`Data persistence operation failed: the database key file (key-${i}.sfk) is missing or lacks required write permissions.`, false, "_database");
                 continue;
             }
 
@@ -805,13 +737,32 @@ class SnowflakeCore {
 
             // Just to estimate the position of the cursor for key and value write streams
             let valuePosition = 32,
-                keyPosition = 32;
+                keyPosition = 32
+
+            function waitForDrain(...streams) {
+                return new Promise(resolve => {
+                    let pending = 0;
+
+                    for (const stream of streams) {
+                        if (!stream || !stream.writableNeedDrain) continue;
+                        pending++;
+
+                        const onDrain = () => {
+                            stream.off("drain", onDrain);
+                            if (--pending === 0) resolve();
+                        };
+
+                        stream.on("drain", onDrain);
+                    }
+
+                    if (pending === 0) resolve();
+                });
+            }
 
             for (let [key, keyData] of pendingList) {
-                pendingList.delete(key);
 
-                // If this key was removed (when it's undefined)
-                if (typeof keyData === "undefined" || this.isInTrash(key))
+                // If this key was removed (when it's undefined) or it's a temporary entry
+                if (typeof keyData === "undefined" || this.isInTrash(key) || this.isTemporary(key))
                     continue;
 
                 // Get value of the current key
@@ -874,21 +825,18 @@ class SnowflakeCore {
                 keyCursor += keyChunk.length;
 
                 // Backpressure handling (pauses loop until drain)
-                if (!canWriteData || !canWriteKey) {
+                if (!canWriteData || !canWriteKey)
+                    await waitForDrain(databaseStream, keyStream);
 
-                    await new Promise(resolve => {
-                        const drained = () => {
-                            databaseStream.off("drain", drained);
-                            keyStream.off("drain", drained);
-                            resolve();
-                        };
-                        databaseStream.on("drain", drained);
-                        keyStream.on("drain", drained);
-                    });
-
-                }
+                pendingList.delete(key);
 
             }
+
+            // Finalize (close the write stream)
+            await Promise.all([
+                new Promise(resolve => databaseStream.end(resolve)),
+                new Promise(resolve => keyStream.end(resolve))
+            ]);
 
             fs.truncateSync(databaseFilePath, databaseCursor);
             fs.truncateSync(keyFilePath, keyCursor);
@@ -899,12 +847,6 @@ class SnowflakeCore {
             if (limitReached || maximumReached)
                 continue;
 
-            // Finalize (close the write stream)
-            await Promise.all([
-                new Promise(resolve => databaseStream.end(resolve)),
-                new Promise(resolve => keyStream.end(resolve))
-            ]);
-
             // Mark it as saved after everything was saved
             this.#unsaved = false;
 
@@ -913,6 +855,26 @@ class SnowflakeCore {
 
         }
 
+        this.#takingSnapshot = false;
+
+        // [SnowflakeEventEmit]: snapshot
+        snowflakeEvents.emit("snapshot");
+
+    }
+
+    /**
+     * Take a snapshot, the difference between this and `persistent` method is that by requesting a snapshot you
+     * restore backup files and take a snapshot after, but `persistent` only dumps current memory into database files
+     * @returns {Promise<unknown>}
+     * @since 1.0.0
+     */
+    async requestSnapshot(){
+        try {
+            await this.restoreAllBackupFiles();
+            return await this.persistent();
+        } catch(e){
+            return Promise.reject("Snapshot failed");
+        }
     }
 
     /**
@@ -939,18 +901,41 @@ class SnowflakeCore {
 
     }
 
+    /**
+     * Default method to restore backup files. See `SnowflakeCoreHelper::restoreBackupFile` for the actual instructions.
+     * @param {string} backupFilePath - Backup file absolute path
+     * @param {boolean} deleteAfter - Whether to delete the backup file after restoration completed
+     * @returns {number|boolean} - `true` on success, `false` on failure, `1` if the file was empty
+     * @see SnowflakeCoreHelper
+     * @since 1.0.0
+     */
+    restoreBackupFile(backupFilePath, deleteAfter = false){
+        return 1;
+    }
+
+    /**
+     * Default method to restore backup files. See `SnowflakeCoreHelper::restoreAllBackupFiles` for the actual
+     * instructions.
+     * @returns {Promise<unknown>}
+     * @see SnowflakeCoreHelper
+     * @since 1.0.0
+     */
+    restoreAllBackupFiles(){}
 
     /**
      * Load database keys and data into the memory
-     * @param {boolean|number} restoreBackups - Whether to restore backup files (false) or skip them (1 or true) or
-     * remove them (2).
+     * @param {boolean|number} restoreBackups - Whether to restore backup files (true) or skip them (false) or remove
+     *     them (2).
      * @since 1.0.0
      */
     loadDatabase(restoreBackups = true) {
 
+        // [SnowflakeEventEmit]: before_db_load
+        snowflakeEvents.emit("before_db_load");
+
         const start = performance.now();
 
-        Snowflake.logger.log("%cyan%[DATABASE] Loading database files into memory...");
+        Snowflake.logger.log("%cyan%[DATABASE] Loading database files into memory...", null, "database");
 
         let totalSize = 0;
         for(let [filename, data] of Object.entries({...this.#meidsData, ...this.#keysData})) {
@@ -967,8 +952,9 @@ class SnowflakeCore {
                         "\n   - Your database files are encrypted and your encryption key doesn't match" +
                         `\n   - Check your encryption key file located in %underline%${Snowflake.yaml.get("meids.encryption_cypher")}%no_underline%` +
                         `\n   - If the key file is missing or corrupted, try creating a new file with the same name and write your encryption key into it and try restarting the app` +
-                        `\n Error: ${e}`
+                        `\n Error: ${e}`, 1, false, "_database"
                     );
+
                 }
             }
         }
@@ -977,7 +963,10 @@ class SnowflakeCore {
 
         this.#lastReload = Date.now();
 
-        Snowflake.logger.logln(`%green%[DATABASE] ${Snowflake.formatBytes(totalSize, this.mbMode, totalSize > 1000 ? 2 : 0  )} of data was loaded into memory in ${(performance.now() - start).toFixed(2)}ms.`);
+        // [SnowflakeEventEmit]: db_load
+        snowflakeEvents.emit("db_load");
+
+        Snowflake.logger.log(`%green%[DATABASE] ${Snowflake.formatBytes(totalSize, this.mbMode, totalSize > 1000 ? 2 : 0  )} of data was loaded into memory in ${(performance.now() - start).toFixed(2)}ms.`, null, "database");
 
     }
 
@@ -988,13 +977,13 @@ class SnowflakeCore {
      */
     initMeidsAndKeys() {
 
-        // Trigger the initialization event
-        SnowflakeEvents.emit("core_before_meids_init");
+        // [SnowflakeEventEmit]: before_meids_init
+        snowflakeEvents.emit("before_meids_init");
 
-        Snowflake.logger.log("%blue%Validating database configuration...");
+        Snowflake.logger.log("%blue%Validating database configuration...", null, "database");
 
         // Scan the database files and store them into necessarily properties
-        ({meids_files: this.#meids, keys_files: this.#keys, backup_files: this.#backups} = this.getDatabaseFiles());
+        ({meidFiles: this.#meids, keyFiles: this.#keys, backupFiles: this.#backups} = this.getDatabaseFiles());
 
         // Load configurations
         let meidsSize = Snowflake.yaml.get("meids.size", "0");
@@ -1147,27 +1136,27 @@ class SnowflakeCore {
 
         // Faint warning
         if(hasFaint)
-            Snowflake.logger.log(`%yellow%   Some database files are not usable because they are out of MEIDs range (meids.count).`);
+            Snowflake.logger.log(`%yellow%   Some database files are not usable because they are out of MEIDs range (meids.count).`, null, "_database");
 
         // New files generation warning
         if(!allGenerated)
-            Snowflake.logger.log(`%warning%   The database files highlighted were created due to their absence.`);
+            Snowflake.logger.log(`%warning%   The database files highlighted were created due to their absence.`, null, "_database");
 
         // Validate headers if needed
         if(headerCheck) {
-            Snowflake.logger.log("%clear%");
+            Snowflake.logger.log("%clear%", false);
             this.validateHeaders();
 
             // Faint warning for headers
             if(hasFaint)
-                Snowflake.logger.log(`%yellow%   Some database files were fainted, therefor weren't validated`);
+                Snowflake.logger.log(`%yellow%   Some database files were fainted, therefor weren't validated`, null, "_database");
 
         }
 
-        Snowflake.logger.log("");
+        Snowflake.logger.log("", false);
 
-        // Trigger the finalization event
-        SnowflakeEvents.emit("core_after_meids_init");
+        // [SnowflakeEventEmit]: after_meids_init
+        snowflakeEvents.emit("after_meids_init");
 
         return this;
     }
@@ -1179,21 +1168,22 @@ class SnowflakeCore {
      */
     init() {
 
-        // Trigger the initialization event
-        SnowflakeEvents.emit("core_before_init");
+        // [SnowflakeEventEmit]: before_init
+        snowflakeEvents.emit("before_core_init");
 
         // Initialize configs
         this.#dbPath = Snowflake.resolvePath(Snowflake.yaml.get("dir.database"));
 
         // Make database directory if it doesn't exist
-        Snowflake.logger.logln("%cyan%[DATABASE] Initializing database");
+        Snowflake.logger.logln("%cyan%[DATABASE] Initializing database", "database");
         if (!fs.existsSync(this.#dbPath)) {
-            Snowflake.logger.log(`%blue%   - Creating database directory`);
+            Snowflake.logger.log(`%blue%   - Creating database directory`, null, "database");
             fs.mkdirSync(this.#dbPath);
         }
 
-        // Trigger the finalization event
-        SnowflakeEvents.emit("core_after_init");
+        // [SnowflakeEventEmit]: after_core_init
+        snowflakeEvents.emit("after_core_init");
+
         return this;
     }
 
@@ -1205,20 +1195,21 @@ class SnowflakeCore {
      */
     initMemoryMonitor() {
 
-        // Trigger the initialization event
-        SnowflakeEvents.emit("core_before_memory_init");
+        // [SnowflakeEventEmit]: before_memory_init
+        snowflakeEvents.emit("before_memory_init");
 
         // Initialize values
         this.#memoryMonitor = true;
         this.#maxMemory = Snowflake.convertSize(Snowflake.yaml.get("memory.max_size"), "B", this.#mbMode);
 
-        // Trigger the finalization event
-        SnowflakeEvents.emit("core_after_memory_init");
+        // [SnowflakeEventEmit]: after_memory_init
+        snowflakeEvents.emit("after_memory_init");
+
         return this;
     }
 
     /**
-     * Initialize AOL worker for getting backups and snapshots
+     * Initialize AOL worker for taking backups
      * @since 1.0.0
      */
     initAolWorker(){
@@ -1227,11 +1218,21 @@ class SnowflakeCore {
 
             this.#workers.aol.on("message", response => {
                 const requestId = response?.requestId;
+                const requestName = response?.requestName;
                 if(requestId && this.#pendingAolRequests.has(requestId)){
                     const { resolve, timeout } = this.#pendingAolRequests.get(requestId);
                     clearTimeout(timeout);
                     this.#pendingAolRequests.delete(requestId);
                     resolve(response.data);
+                }
+                else if(requestName){
+                    if(requestName === "persistent") {
+                        Snowflake.logger.info("Taking snapshot (requested by worker thread)", false, "snapshot");
+                        const startId = Snowflake.logger.timeStart();
+                        this.requestSnapshot().then(() => {
+                            Snowflake.logger.benchmark("Took snapshot", startId, "snapshot");
+                        }).catch(() => {});
+                    }
                 }
             });
 
@@ -1264,8 +1265,8 @@ class SnowflakeCore {
      */
     start() {
 
-        // Trigger the starting event
-        SnowflakeEvents.emit("core_before_start");
+        // [SnowflakeEventEmit]: before_core_start
+        snowflakeEvents.emit("before_core_start");
 
         // Initialize values
         this.#mbMode = Snowflake.yaml.isTrue("memory.mb_mode");
@@ -1278,17 +1279,21 @@ class SnowflakeCore {
             this.init().initMeidsAndKeys();
         }, "- Database files validated");
 
-        // Trigger the initialization event
-        SnowflakeEvents.emit("core_before_database_read");
+        // [SnowflakeEventEmit]: before_db_read
+        snowflakeEvents.emit("before_db_read");
 
-        // Initialize workers
-        this.#workers.aol = new Worker(Snowflake.resolvePath("workers/worker_aol.js", Snowflake.core_path), {
+        // [SnowflakeEventEmit]: before_db_workers_init
+        snowflakeEvents.emit("before_db_workers_init");
+
+        // Initialize backup worker
+        this.#workers.aol = new Worker(Snowflake.resolvePath("workers/worker_aol.js", Snowflake.corePath), {
             workerData: {
                 database_path: this.#dbPath,
                 permission: Snowflake.yaml.get("meids.permission"),
                 maxBackupSize: Snowflake.convertSize(Snowflake.yaml.get("persistent.backup_size_limit", "10MB")),
                 backupInterval: Snowflake.yaml.getInt("persistent.backup_interval", 5000),
-                megaBinary: Snowflake.yaml.isTrue("memory.mb_mode")
+                megaBinary: Snowflake.yaml.isTrue("memory.mb_mode"),
+                snapshotSizeTrigger: Snowflake.yaml.getBytes("persistent.snapshot_size_trigger")
             }
         });
 
@@ -1297,9 +1302,15 @@ class SnowflakeCore {
             this.initAolWorker();
         }, "- Backup worker threads started");
 
+        // [SnowflakeEventEmit]: db_workers_init
+        snowflakeEvents.emit("db_workers_init");
+
         // Handle worker errors
         this.#workers.aol.on("error", msg => {
-            Snowflake.logger.log(`%red%worker_aol.js: ${msg}`);
+            Snowflake.logger.log(`%red%worker_aol.js: ${msg}`, null, "_system");
+
+            // If the AOL worker stops working or throws a fatal error, the process must be stopped as the database
+            // will lose the ability to take backups and data loss can happen.
             process.exit(1);
         });
 
@@ -1308,25 +1319,29 @@ class SnowflakeCore {
             this.loadDatabase();
         }, "- Database keys and data were loaded");
 
+        // If encryption was enabled previously, the data will be decrypted and another snapshot will be taken
         if(this.#dbRecover){
-            Snowflake.logger.log("%blue%[DATABASE] Recovering database...");
+            Snowflake.logger.log("%blue%[DATABASE] Recovering database...", null, "_database");
             this.persistent().then(() => {
-                Snowflake.logger.log("%magenta%[DATABASE] Database files were recovered, you can disable 'meids.recover' by setting it to 'false' in 'configs.yaml' file.");
+                Snowflake.logger.log("%magenta%[DATABASE] Database files were recovered, you should now disable 'meids.recover' by setting it to 'false' in 'configs.yaml' file.", null, "_database");
                 process.exit(0);
             });
             return this;
 
         }
 
-        // Trigger the finalization event
-        SnowflakeEvents.emit("core_after_database_read");
+        // [SnowflakeEventEmit]: after_db_read
+        snowflakeEvents.emit("after_db_read");
 
         // Initialize the memory monitor if needed
         if(this.#memoryMonitor)
             this.initMemoryMonitor();
 
-        // Trigger the ending event
-        SnowflakeEvents.emit("core_after_start");
+        // Initialize automatic snapshot (if enabled)
+        this.#initializeAutomaticSnapshot();
+
+        // [SnowflakeEventEmit]: after_core_start
+        snowflakeEvents.emit("after_core_start");
 
         return this;
     }
@@ -1344,26 +1359,26 @@ class SnowflakeCore {
     /**
      * Check if an origin is allowed or not
      * @param {string} origin - The origin URL, e.g: "https://example.com"
-     * @param {string|null} allowed_origins - Allowed origins regex, pass null to get it from configuration file.
+     * @param {string|null} allowedOrigins - Allowed origins regex, pass null to get it from configuration file.
      * @return {boolean} - True if the origin is allowed, false otherwise
      * @since 1.0.0
      */
-    originIsAllowed(origin, allowed_origins=null) {
+    originIsAllowed(origin, allowedOrigins=null) {
         try {
 
             // Get allowed origins from configuration if needed
-            if(allowed_origins === null)
-                allowed_origins = Snowflake.yaml.get("server.allowed_origins");
+            if(allowedOrigins === null)
+                allowedOrigins = Snowflake.yaml.get("server.allowed_origins");
 
-            if(!allowed_origins)
+            if(!allowedOrigins)
                 return false;
 
             // Check if origin is allowed
-            const pattern = new RegExp(allowed_origins);
+            const pattern = new RegExp(allowedOrigins);
             return pattern.test(origin);
 
         } catch(e){
-            Snowflake.logger.error(`Couldn't verify the origin '${origin}', ` + e.toString(), "socket");
+            Snowflake.logger.error(`Couldn't verify the origin '${origin}', ` + e.toString(), "socket", "server");
             return false;
         }
     }
@@ -1386,19 +1401,20 @@ class SnowflakeCore {
 
     /**
      * Sanitize the value before adding it to memory
-     * @param {any} value
-     * @return {*}
+     * @param {any} value - Input value to sanitize
+     * @return {string|number|boolean|buffer|array|object|null}
      * @since 1.0.0
      */
     sanitizeValue(value){
-        // TODO: needs to be sanitized
-        return value;
+        if(["string", "boolean", "number", "object"].includes(typeof value))
+            return value;
+        return null;
     }
 
     /**
      * Select the next database file to add a new entry.
      * When you add a new entry it starts from `meid-0.sfd` file, the next entry will be added to `meid-1.sfd` and so
-     * on. However if you don't have more than 1 MEID in your configuration, all of the entries get added to the first
+     * on. However, if you don't have more than 1 MEID in your configuration, all the entries get added to the first
      * file.
      * @return {number} - The current index of MEID files starting from 0
      * @since 1.0.0
@@ -1412,9 +1428,9 @@ class SnowflakeCore {
     }
 
     /**
-     * Find a ket data from lookup table.
+     * Find a key data from lookup table.
      * @param {string} key - The key to search
-     * @return {{}|{name: string, hash: Buffer, size: number, position: number, length: number}} - Key data on succes,
+     * @return {{}|{name: string, hash: Buffer, size: number, position: number, length: number}} - Key data on success,
      * empty object if didn't exist
      * @since 1.0.0
      */
@@ -1425,7 +1441,7 @@ class SnowflakeCore {
     /**
      * Find a value by its key hash from database
      * @param {string} hash - Hash of the key in string format
-     * @return {*|undefined} - The value of the entry if exist, otherwise `undefined`
+     * @return {*|undefined} - The value of the entry (if exists), otherwise `undefined`
      * @since 1.0.0
      */
     lookupValue(hash){
@@ -1441,7 +1457,7 @@ class SnowflakeCore {
      * @return {boolean} - True if exists, false otherwise
      * @since 1.0.0
      */
-    exist(key){
+    exists(key){
         return this.lookupKey(key).length > 0;
     }
 
@@ -1459,7 +1475,7 @@ class SnowflakeCore {
      * @param {Object} request - The request payload to send to the worker. A `requestId` will be automatically assigned
      * to this object before sending.
      * @param {number} [timeoutMs=30000] - The maximum time (in milliseconds) to wait for a worker response before
-     * rejecting the promise. Defaults to 30 seconds.
+     * rejecting the promise. Default is 30 seconds.
      * @return {Promise<any>|null} A promise that resolves with the worker's response,
      * rejects if the response times out, or returns `null` if the worker does not exist.
      * @since 1.0.0
@@ -1470,32 +1486,37 @@ class SnowflakeCore {
         if (!worker || !(worker instanceof Worker))
             return null;
 
-        // generate a unique ID
+        // Generate a unique ID
         const requestId = `${Date.now()}-${Math.random()}`;
         request.requestId = requestId;
 
         return new Promise((resolve, reject) => {
+
             const timeout = setTimeout(() => {
                 this.#pendingAolRequests.delete(requestId);
                 reject(new Error("Worker response timed out"));
             }, timeoutMs);
-            this.#pendingAolRequests.set(requestId, { resolve, reject, timeout });
+
+            if(workerName === "aol")
+                this.#pendingAolRequests.set(requestId, { resolve, reject, timeout });
 
             worker.postMessage(request);
+
         });
     }
-
 
     /**
      * Sets a value directly without sanitization or confirmation.
      *
      * **Warning:** Use this method with caution. Unlike `set()`, this method does not sanitize the key
      * or send confirmation request to the backup thread. Data set using this method is stored in memory only and will
-     * be lost when the process terminates, unless you explicitly invoke the `persistent` method to save it permanently.
-     * Also, memory manager won't be able to access the data.
+     * be lost when the process terminates, unless you explicitly invoke the `persistent` method to save it
+     * permanently.
+     * **Also, memory monitor will be ignored in this method**
      *
-     * @param {string} key - The key for the entry to be modified.
-     * @param {*} value - The value to assign.
+     * @param {string} key - The key of entry you want to change
+     * @param {SnowflakeEntryType} value - The value to set, can be a `number`, `string`, `boolean`, `array`, `object`
+     *     or a `buffer`
      * @return {number} - Returns `0` on failure, `1` if the value was updated, or `2` if a new entry was inserted.
      * @since 1.0.0
      */
@@ -1506,7 +1527,7 @@ class SnowflakeCore {
 
         const hash = this.#sha256(key);
 
-        if (this.exist(key)) {
+        if (this.exists(key)) {
             this.#setLookupValue(hash, value);
             return 1;
         }
@@ -1523,7 +1544,8 @@ class SnowflakeCore {
     /**
      * Set a value by its key
      * @param {string} key - The key of entry you want to change
-     * @param {*} value - The value to set, can be any simple object like number, string, boolean, array, object, etc.
+     * @param {SnowflakeEntryType} value - The value to set, can be a `number`, `string`, `boolean`, `array`, `object`
+     *     or a `buffer`
      * @return {number} - Returns `0` on failure, `1` if the value was updated, or `2` if a new entry was inserted,
      * `-1` when memory limit exceeded or `-2` when the new value is the same as it is now (no change).
      * @since 1.0.0
@@ -1542,7 +1564,7 @@ class SnowflakeCore {
                 action: "set",
                 key: k,
                 value: v
-            }).then(ignore => {});
+            }).then(ignore => {}).catch(() => {});
 
             return true;
         }
@@ -1572,19 +1594,53 @@ class SnowflakeCore {
     }
 
     /**
+     * Sets a value temporarily.
+     * When using this method, data will be added to the database temporarily, without getting a backup from the entry.
+     * That means, as soon as you restart or terminate the program, your data will be lost. Good for temporarily
+     * caching. When you call persistent temporary entries will be ignored (not included in snapshots).
+     *
+     * @param {string} key - The key of entry you want to change
+     * @param {SnowflakeEntryType} value - The value to set, can be a `number`, `string`, `boolean`, `array`, `object`
+     *     or a `buffer`
+     * @return {number} - Returns `0` on failure, `1` if the value was updated, or `2` if a new entry was inserted.
+     * @since 1.0.0
+     */
+    setTemp(key, value){
+
+        // Memory monitor will be ignored in `setUnsafe` method
+        if(this.#memoryMonitor){
+            const bytes = Snowflake.roughSizeOf(value) + 36;
+            if(this.#memoryMonitor && this.#maxMemory > 0 && this.#memorySize + bytes > this.#maxMemory)
+                return -1;
+        }
+
+        // `setUnsafe` method won't sanitize keys
+        key = this.sanitizeKey(key);
+
+        const status = this.setUnsafe(key, value);
+
+        // Add the key to temporary lookup table if it was newly inserted to the database
+        // We can later check a key existence in this table to distinct temporary entries from permanent ones
+        if(status === 2)
+            this.#lookup.temps.add(key);
+
+        return status;
+
+    }
+
+    /**
      * Check if an entry is strictly equal to a value, it checks both type and logical value, for example if the entry
-     * value is
-     * "1" as string, and the `compareValue` is 1 as integer, it'll return false.
+     * value is "1" as string, and the `compareValue` is 1 as integer, it'll return false.
      * Also list orders matters, for example [1,2,3] isn't the same as [2,3,1] and returns false.
-     * @param {string} entryKey
-     * @param {any} compareValue
+     * @param {string} entryKey - Key of the entry you want to compare
+     * @param {any} compareValue - Value to be compared with the entry's
      * @return {boolean}
      * @since 1.0.0
      */
     matchValue(entryKey, compareValue){
 
         // Check if the entry exists
-        if(this.exist(entryKey)) {
+        if(this.exists(entryKey)) {
 
             // Get the value of the entry
             const current = this.get(entryKey);
@@ -1600,20 +1656,22 @@ class SnowflakeCore {
 
     /**
      * Get a value from database
-     * @param {string} key - The key you want to get
-     * @param {*} def - The default value if the key didn't exist
-     * @return {*}
+     * @param {string} key - The key you want to read from database
+     * @param {SnowflakeEntryType} defaultValue - The default value if it didn't exist
+     * @return {SnowflakeEntryType} - Can be either `string`, `number`, `boolean`, `object`, `array`, `buffer` or `null`
      * @since 1.0.0
      */
-    get(key, def=null){
+    get(key, defaultValue = null){
         const hash = this.#sha256(key, true);
         const value = this.lookupValue(hash.toString("hex"));
-        return value === undefined ? def : value;
+        return value === undefined ? defaultValue : value;
     }
 
     /**
      * Truncating a specific MEID file (if it's already loaded) with its keys
-     * @return {string} - Result message string
+     * @param {number} index - The index of your database file, starting from `0`.
+     * For example to remove `meid-1.sfd` and `meid-1.sfk` files pass `1`.
+     * @return {string} - Result message string that you can directly print.
      * @since 1.0.0
      */
     truncate(index){
@@ -1650,6 +1708,9 @@ class SnowflakeCore {
             fs.closeSync(databaseDescriptor);
             fs.closeSync(keyDescriptor);
 
+            // [SnowflakeEventEmit]: truncate @ number
+            snowflakeEvents.emit("truncate", index);
+
             return `✓ index ${index}: Both database and key files were truncated`;
 
         }
@@ -1663,27 +1724,43 @@ class SnowflakeCore {
 
     /**
      * Truncating all the loaded MEID files with their keys
-     * @return {string[]} - The list of result messages
+     * @return {string[]} - The list of result messages that you can directly print.
      * @since 1.0.0
      */
     truncateAll(){
+
         let messages = [];
+
         for(let i = 0; i < this.meidsCount; i++){
             const message = this.truncate(i);
             messages.push(message);
         }
-        // TODO: remove backup files after truncating them
+
+        // [SnowflakeEventEmit]: truncate_all
+        snowflakeEvents.emit("truncate_all");
+
         return messages;
+
     }
 
     /**
      * Check if a specific key is in trash or not
-     * @param key
-     * @return boolean
+     * @param key - Entry key
+     * @return boolean - `true` if it's in trash, `false` otherwise
      * @since 1.0.0
      */
     isInTrash(key){
         return this.#lookup.trash.some(item => item.name === key);
+    }
+
+    /**
+     * Check if a specific key is a temporary entry
+     * @param key - Entry key
+     * @return boolean - `true` if it's temporary, `false` otherwise
+     * @since 1.0.0
+     */
+    isTemporary(key){
+        return this.#lookup.temps.has(key);
     }
 
     /**
@@ -1785,22 +1862,23 @@ class SnowflakeCore {
      * Remove specific entry from database
      * @param {string} key - The key you want to remove
      * @param {boolean} askWorker - Whether to ask worker thread to add the remove instruction to the backup file. If
-     * set to false, the entry won't be removed forever and will be restored at next startup.
+     * set to false, the entry won't be removed forever and will be restored at the next reload.
      * @return {boolean} - True on success, false on failure
      * @since 1.0.0
      */
     remove(key, askWorker = true){
 
         // Fast lookup to ignore deletion if the key doesn't exist
-        if(!this.exist(key))
+        if(!this.exists(key))
             return false;
 
-        const workerConfirmed = (k) => {
+        const workerConfirmed = k => {
+            if(!askWorker)
+                return;
             this.askWorker("aol", {
                 action: "remove",
                 key: k
-            }).then(ignore => {});
-            return true;
+            }).then(ignore => {}).catch(() => {});
         }
 
         // Make the key hash for lookup
@@ -1850,6 +1928,10 @@ class SnowflakeCore {
         this.#cache[`key_hash_${key}`] = null;
         delete this.#cache[`key_hash_${key}`];
 
+        // We must remove temporary entries from lookup table to free up memory and prevent conflictions
+        // if a permanent entry with the same key gets inserted later
+        this.#lookup.temps.delete(key);
+
         // Mark it as unsaved after a change was made
         this.#unsaved = true;
 
@@ -1864,8 +1946,8 @@ class SnowflakeCore {
     getInfo(){
 
         return {
-            version: appConfig.version,
-            name: appConfig.name,
+            version: Snowflake.config.version,
+            name: Snowflake.config.name,
             encryption: this.#dbEncrypt,
             monitor: this.#memoryMonitor,
             cliPort: Snowflake.yaml.getInt("server.cli_port")
@@ -1957,12 +2039,80 @@ class SnowflakeCore {
     }
 
     /**
-     * Get the number existing entries
+     * Get the total number of existing entries in the database
      * @returns {number}
      * @since 1.0.0
      */
     getEntriesCount(){
         return Object.keys(this.#lookup.hashMap).length;
+    }
+
+    /**
+     * Stop all the database workers, this function is used for restarting process
+     * and should not be used manually unless you know what you are doing.
+     * @since 1.0.0
+     */
+    stopWorkers(){
+
+        for(let [workerName, worker] of Object.entries(this.#workers)){
+            if(worker instanceof Worker){
+                // [SnowflakeEventEmit]: worker_aol_stopped
+                snowflakeEvents.emit(`worker_${workerName}_stopped`);
+                worker.terminate();
+                Snowflake.logger.log(`%orange%[WORKER]%reset% '${workerName}' terminated`);
+            }
+        }
+
+        // [SnowflakeEventEmit]: workers_stopped
+        snowflakeEvents.emit("workers_stopped");
+
+    }
+
+    /**
+     * Initialize automatic snapshot
+     * @since 1.0.0
+     */
+    #initializeAutomaticSnapshot(){
+
+        const intervalTime = Snowflake.yaml.getInt("persistent.snapshot_interval", 0);
+
+        if(this.#snapshotInterval)
+            clearInterval(this.#snapshotInterval);
+
+        if(intervalTime > 0){
+
+            Snowflake.logger.info(`Automatic snapshot has been enabled and set to every ${intervalTime/1000} seconds`, false, "snapshot");
+
+            this.#snapshotInterval = setInterval(() => {
+
+                if(this.isTakingSnapshot){
+                    if(Snowflake.isDevelopment)
+                        Snowflake.logger.info(`Snapshot delayed for another ${intervalTime/1000} seconds since a snapshot is already in progress.`, false, "snapshot");
+                    return;
+                }
+
+                if(!this.isUnsaved){
+                    if(Snowflake.isDevelopment)
+                        Snowflake.logger.info(`Snapshot delayed for another ${intervalTime/1000} seconds no change was made.`, false, "snapshot");
+                    return;
+                }
+
+                Snowflake.logger.info("Time to take a snapshot...", false, "snapshot");
+
+                const startId = Snowflake.logger.timeStart();
+                this.requestSnapshot().then(() => {
+                    Snowflake.logger.benchmark("Took snapshot", startId, "snapshot");
+                }).catch(() => {});
+
+            }, intervalTime);
+
+        }
+
+        else{
+            Snowflake.logger.log("%yellow%[WARNING] Automatic snapshot is disabled and you have to take it manually if you want." +
+                "\nTo enable it, update 'persistent.snapshot_interval' value in configuration file.", null, "_snapshot");
+        }
+
     }
 
     /**
@@ -2140,6 +2290,31 @@ class SnowflakeCore {
      */
     get sizeLookup(){
         return this.#sizeLookup;
+    }
+
+    /**
+     * Check if there is currently a snapshot process is progress.
+     * @returns {boolean}
+     * @since 1.0.0
+     */
+    get isTakingSnapshot(){
+        return this.#takingSnapshot;
+    }
+
+    /**
+     * Check if there is currently a backup restoration process is progress.
+     * @returns {boolean}
+     * @since 1.0.0
+     */
+    get isRestoringBackup(){
+        return this.#restoringBackups;
+    }
+    /**
+     * Update backup restoration state
+     * @since 1.0.0
+     */
+    set isRestoringBackup(state){
+        this.#restoringBackups = state;
     }
 
 }

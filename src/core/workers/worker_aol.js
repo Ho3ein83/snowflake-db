@@ -1,7 +1,6 @@
 const SnowflakeAol = require("../SnowflakeAol");
 const { parentPort, workerData } = require("worker_threads");
-const Snowflake = require("../Snowflake");
-const { database_path, permission, maxBackupSize, backupInterval, megaBinary } = workerData;
+const { database_path, permission, maxBackupSize, backupInterval, megaBinary, snapshotSizeTrigger } = workerData;
 
 // Check database path
 if(!database_path)
@@ -13,7 +12,11 @@ const aol = new SnowflakeAol({
     permission: permission,
     maxFileSize: maxBackupSize,
     backupInterval: backupInterval,
-    megaBinaryMode: megaBinary
+    megaBinaryMode: megaBinary,
+    snapshotSizeTrigger: snapshotSizeTrigger,
+    triggerSnapshotCallback: () => {
+        parentPort.postMessage({ requestName: "persistent" });
+    }
 });
 
 // Initialize the class as worker
@@ -63,12 +66,23 @@ parentPort.on("message", data => {
         send_success(null, nonce, requestId);
     }
     else if(action === "remove"){
-        let { key } = data;
+        const { key } = data;
         if(!key){
             send_error(null, nonce, requestId);
             return;
         }
         aol.remove(key);
+        send_success(null, nonce, requestId);
+    }
+    else if(action === "rotate"){
+        const { onlyIfEmpty } = data;
+        if(onlyIfEmpty){
+            if(aol.fileSize <= 0){
+                send_success(null, nonce, requestId);
+                return;
+            }
+        }
+        aol.rotateAndRemake();
         send_success(null, nonce, requestId);
     }
     else if(action === "ping"){

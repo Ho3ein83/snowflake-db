@@ -75,7 +75,7 @@ npm install
 ### 3. Run the program
 After installing required dependencies, run the project using the following command:<br/>
 ```bash
-node index.js
+node project1.js
 ```
 
 Now you can access the database using TCP shell or use shared method to use it inside your project.
@@ -86,28 +86,25 @@ If you want to customize the application, open `configs.yaml` file and edit it a
 ### Use the program as module
 if you have another Node.js project, and you want to run SnowflakeDB on top of your project, use this code instead:
 ```javascript
-const { Snowflake, startSnowflake} = require("./module");
+const { Snowflake, startSnowflake} = require("/path/to/snowflake-db/module");
 
-/* ... Your code here ... */
-
-// Call this before using the database (running this at top is recommended)
-// Note that it blocks your code until the database initialization is over,
-// this behaviour will be changed in the first release
-startSnowflake();
-
-/* ... Your code here ... */
+// Call this before using the database (running this at the very top is recommended)
+// You can also use the absolute path, if just a file name was given,
+// it's going to use current directory.
+// If the given path didn't exist, it'll create a new file with
+// default configuration that you can change later.
+startSnowflake("config.yaml", "app.json");
 
 // Set / Update some values
 Snowflake.core.set("first_name", "John");
 Snowflake.core.set("last_name", "Doe");
+Snowflake.core.set("age", 20);
 
 // Get a value (with a default value)
 firstName = Snowflake.core.get("first_name", "No Name");
 
 // Delete a value
 Snowflake.core.remove("last_name");
-
-/* ... Your code here ... */
 ```
 
 **Note:** as mentioned before, this project is not finished yet, so for now, you need to save the module locally inside your project.
@@ -401,6 +398,11 @@ To see how long a command takes to execute, enable the timing attribute by sendi
 ╰─────────────────────────────────────────╯
 ```
 ```
+╭ logout ──────────────────────────────────────────────────────────╮
+│ Terminates current session and asks for another token if needed. │
+╰──────────────────────────────────────────────────────────────────╯
+```
+```
 ╭ exit ───────────────────────────────────────────────────────────────────╮
 │ Exit the shell                                                          │
 │ Usage: exit [?STATUS]                                                   │
@@ -443,31 +445,33 @@ To see how long a command takes to execute, enable the timing attribute by sendi
 Output of the `info` command:
 ```
 ╭ Now ──────────────────────────╮
-│ Sat, 23 Aug 2025 11:49:18 GMT │
+│ Sat, 07 Mar 2026 13:36:20 GMT │
 ╰───────────────────────────────╯
-╭ Info ──────────────────────────────────╮
-│ ── Server ───────────────────────────  │
-│ Uptime --------------- 10:41           │
-│ Webserver Port ------- 6401            │
-│ CLI Port ------------- 6402            │
-│ Heap Total ----------- 11.93 MB        │
-│ Heap Used ------------ 10.70 MB        │
-│ ── Application ──────────────────────  │
-│ Version Name --------- 1.0.0           │
-│ Version Code --------- 1               │
-│ ── Memory ───────────────────────────  │
-│ Monitor -------------- Enabled         │
-│ Max Memory ----------- 10.00 KB        │
-│ Used Memory ---------- 43 B (0.43%)    │
-│ ── Database ─────────────────────────  │
-│ MEID Version --------- 1               │
-│ MEIDs Count ---------- 1               │
-│ MEIDs Encryption ----- Enabled         │
-│ Last Reload ---------- 10 minutes ago  │
-│ ── Persistent ───────────────────────  │
-│ Persistent Status ---- Saved           │
-│ Last Persistent Call - 10 minutes ago  │
-╰────────────────────────────────────────╯
+╭ Info ──────────────────────────────────────────────╮
+│ ── Server ───────────────────────────────────────  │
+│ Uptime --------------- 00:26                       │
+│ Webserver Port ------- 6401                        │
+│ CLI Port ------------- 6402                        │
+│ ── Application ──────────────────────────────────  │
+│ Version Name --------- 1.0.0                       │
+│ Version Code --------- 1                           │
+│ ── Memory ───────────────────────────────────────  │
+│ Monitor -------------- Enabled                     │
+│ Heap Total ----------- 12.89 MiB                   │
+│ Heap Used ------------ 10.45 MiB                   │
+│ Max Memory ----------- 953.67 MiB                  │
+│ Used Memory ---------- 42 B (0.00%)                │
+│ ── Database ─────────────────────────────────────  │
+│ MEID Version --------- 1                           │
+│ MEIDs Count ---------- 1                           │
+│ MEIDs Encryption ----- Disabled                    │
+│ Last Reload ---------- 26 seconds ago              │
+│ ── Configuration ────────────────────────────────  │
+│ Status --------------- Changed (restart required)  │
+│ ── Persistent ───────────────────────────────────  │
+│ Persistent Status ---- No changes                  │
+│ Last Persistent Call - Never                       │
+╰────────────────────────────────────────────────────╯
 ```
 
 ### Database commands
@@ -622,7 +626,7 @@ Output of the `info` command:
 │     * Options: --no-backup: Omit the backup files restoration and     │
 │                             just reload the database files. If not    │
 │                             present, backups will be restored first.  │
-│                --delete-backups: Delete every unhandled backup files. │
+│                --delete-backups: Deletes every unhandled backup files. │
 │                                                                       │
 │ Examples: reload                                                      │
 │           reload --no-backup                                          │
@@ -630,14 +634,44 @@ Output of the `info` command:
 ╰───────────────────────────────────────────────────────────────────────╯
 ```
 ```
-╭ persist ───────────────────────────────────╮
-│ Takes a snapshot from the current database │
-│ and stores it in the database files.       │
-│ Alias: persist                             │
-│ Usage: persist                             │
-│                                            │
-│ Examples: persist                          │
-╰────────────────────────────────────────────╯
+╭ persistent [?OPTIONS] ───────────────────────────────────────────╮
+│ Takes a snapshot from the current database                       │
+│ and stores it in the database files.                             │
+│ Alias: persist                                                   │
+│ Shortcuts: snapshot => persistent -b                             │
+│ Usage: persistent [?OPTIONS]                                     │
+│     [OPTIONS]:                                                   │
+│     * Optional                                                   │
+│     * Options: -b or --backup: if present, backup files will be  │
+│                                restored before taking a snapshot │
+│                                 use 'snapshot' command as        │
+│                                an alias for this option          │
+│                                                                  │
+│ Examples: persistent                                             │
+│           persistent -b <- you can use 'snapshot' instead        │
+│           persistent --backup <- you can use 'snapshot' instead  │
+╰──────────────────────────────────────────────────────────────────╯
+```
+```
+╭ restore ───────────────────────────────────────────────────────────╮
+│ Restores all pending backup files into memory.                     │
+│ You might want to call 'persistent' to store the data in database. │
+│ Also you can use 'snapshot' command to restore backups and take    │
+│ a snapshot together.                                               │
+│ Do not use this command without running 'persistent', restoring    │
+│ backups without taking a snapshot can lead to data loss.           │
+│ Usage: restore                                                     │
+│                                                                    │
+│ Examples: restore                                                  │
+╰────────────────────────────────────────────────────────────────────╯
+```
+```
+╭ path ────────────────────────────────────────────────────────────╮
+│ Shows the absolute path of your database and configuration files │
+│ Usage: path                                                      │
+│                                                                  │
+│ Examples: path                                                   │
+╰──────────────────────────────────────────────────────────────────╯
 ```
 
 ### Backup files or AOL (Append Only List)

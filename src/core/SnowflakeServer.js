@@ -1,15 +1,14 @@
 const {v4: uuid4} = require("uuid");
 const Snowflake = require("./Snowflake");
-const SnowflakeEvents = require("./SnowflakeEvents");
-const SnowflakeCLI = require("./SnowflakeCLI");
+const snowflakeEvents = require("./SnowflakeEvents");
+const snowflakeCLI = require("./SnowflakeCLI");
+const SnowflakeApi = require("./SnowflakeApi");
 
 const express = require("express");
 const app = express();
 const http = require("http");
 const httpServer = http.createServer(app);
 const { server: WebSocketServer, request: WebSocketRequest} = require("websocket");
-const appConfig = require("../../app.json");
-const { isArray } = require("msgpack-lite/lib/bufferish");
 const SnowflakeAol = require("./SnowflakeAol");
 const path = require("path");
 const fs = require("fs");
@@ -37,11 +36,18 @@ class SnowflakeServer {
     #socket;
 
     /**
-     * SnowflakeCLI instance or null if CLI is not initialized
-     * @type {import("./SnowflakeCLI")|null}
+     * HTTP server object
+     * @type {Server}
      * @since 1.0.0
      */
-    #cli = null;
+    #http;
+
+    /**
+     * SnowflakeCLI instance or null if CLI is not initialized
+     * @type {SnowflakeCLI}
+     * @since 1.0.0
+     */
+    #cli;
 
     /**
      * Websocket login attempts
@@ -90,7 +96,7 @@ class SnowflakeServer {
         if(!Snowflake.yaml.isTrue("server.home_page"))
             res.sendStatus(404);
         else
-            res.sendFile(process.env.PWD + "/src/view/index.html");
+            res.sendFile(Snowflake.path + "/src/view/index.html");
     }
 
     /**
@@ -110,14 +116,14 @@ class SnowflakeServer {
     #initGuiApp(){
 
         // Resolve absolute path to dist/gui
-        const guiPath = path.join(process.env.PWD, "src/view/gui");
+        const guiPath = path.join(Snowflake.path, "src/view/gui");
 
         // Serve index.html for /gui route
         function serveGui(req, res){
             const indexPath = path.join(guiPath, "index.html");
             fs.readFile(indexPath, "utf8", (err, html) => {
                 if (err)
-                    return res.status(500).send("Error loading app");
+                    return res.status(500).send(`Error loading app:<br><pre><code>${err}</code></pre>`);
 
                 const guiHost = Snowflake.yaml.get("server.gui_host");
                 const guiSecured = Snowflake.yaml.isTrue("server.secure_gui");
@@ -176,9 +182,11 @@ class SnowflakeServer {
                     // Reject the connection
                     request.reject(4001, "Unauthorized");
 
-                    SnowflakeEvents.emit("socket_origin_reject", null);
+                    // [SnowflakeEventEmit]: socket_origin_reject @ null|string
+                    snowflakeEvents.emit("socket_origin_reject", null); // Request origin = null
 
-                    SnowflakeEvents.emit("socket_login_attempt", {
+                    // [SnowflakeEventEmit]: socket_login_attempt
+                    snowflakeEvents.emit("socket_login_attempt", {
                         success: false,
                         cause: "attempts_reached",
                         client: ip,
@@ -198,12 +206,13 @@ class SnowflakeServer {
             // Reject the connection
             request.reject(4001, "Unauthorized");
 
-            Snowflake.logger.warning(`Origin '${request.origin}' was rejected.`, "socket");
+            Snowflake.logger.warning(`Origin '${request.origin}' was rejected.`, "socket", "server");
 
-            SnowflakeEvents.emit("socket_origin_reject", request.origin);
+            // [SnowflakeEventEmit]: socket_origin_reject @ null|string
+            snowflakeEvents.emit("socket_origin_reject", request.origin);
 
-            // Record login attempt
-            SnowflakeEvents.emit("socket_login_attempt", {
+            // [SnowflakeEventEmit]: socket_login_attempt @ {success:false,origin:string|null,cause:string,client:string}
+            snowflakeEvents.emit("socket_login_attempt", {
                 success: false,
                 origin: request.origin,
                 cause: "origin",
@@ -221,11 +230,13 @@ class SnowflakeServer {
             // Reject the connection
             request.reject(4001, "Unauthorized");
 
-            Snowflake.logger.warning(`Websocket connection rejected because no token was given.`, "socket");
+            Snowflake.logger.warning(`Websocket connection rejected because no token was given.`, "socket", "server");
 
-            SnowflakeEvents.emit("socket_token_reject", null);
+            // [SnowflakeEventEmit]: socket_token_reject @ null|string
+            snowflakeEvents.emit("socket_token_reject", null);
 
-            SnowflakeEvents.emit("socket_login_attempt", {
+            // [SnowflakeEventEmit]: socket_login_attempt @ {success:false,token:string,cause:string,client:string}
+            snowflakeEvents.emit("socket_login_attempt", {
                 success: false,
                 token: "",
                 cause: "credential",
@@ -245,11 +256,13 @@ class SnowflakeServer {
             // Reject the connection
             request.reject(4001, "Unauthorized");
 
-            Snowflake.logger.warning(`Websocket connection rejected because the given token was invalid.`, "socket");
+            Snowflake.logger.warning(`Websocket connection rejected because the given token was invalid.`, "socket", "server");
 
-            SnowflakeEvents.emit("socket_token_reject", token);
+            // [SnowflakeEventEmit]: socket_token_reject @ string
+            snowflakeEvents.emit("socket_token_reject", token);
 
-            SnowflakeEvents.emit("socket_login_attempt", {
+            // [SnowflakeEventEmit]: socket_login_attempt @ {success:false,token:string,cause:string,client:string}
+            snowflakeEvents.emit("socket_login_attempt", {
                 success: false,
                 token: token,
                 cause: "credential",
@@ -266,9 +279,10 @@ class SnowflakeServer {
             // Reject the connection
             request.reject(4001, "Unauthorized");
 
-            Snowflake.logger.warning(`Websocket connection rejected because the given token doesn't have enough permission to web interface.`, "socket");
+            Snowflake.logger.warning(`Websocket connection rejected because the given token doesn't have enough permission to web interface.`, "socket", "server");
 
-            SnowflakeEvents.emit("socket_token_reject", token);
+            // [SnowflakeEventEmit]: socket_token_reject @ string
+            snowflakeEvents.emit("socket_token_reject", token);
 
             return;
 
@@ -293,7 +307,7 @@ class SnowflakeServer {
         // Remove the connection when it disconnects
         connection.on("close", () => {
 
-            Snowflake.logger.info(`Connection with %underline%${uuid}%no_underline% UUID was closed.`, "socket");
+            Snowflake.logger.info(`Connection with %underline%${uuid}%no_underline% UUID was closed.`, "socket", "server");
 
             // Remove from connections list
             this.#connections.delete(uuid);
@@ -315,12 +329,13 @@ class SnowflakeServer {
             access: authentication.export()
         });
 
-        Snowflake.logger.info(`New connection accepted using %underline%${request.origin}%no_underline% origin with UUID: %underline%${uuid}%no_underline%`, "socket");
+        Snowflake.logger.info(`New connection accepted using %underline%${request.origin}%no_underline% origin with UUID: %underline%${uuid}%no_underline%`, "socket", "server");
 
-        SnowflakeEvents.emit("socket_origin_accept", connection);
+        // [SnowflakeEventEmit]: socket_origin_accept @ WebSocketConnection
+        snowflakeEvents.emit("socket_origin_accept", connection);
 
-        // Record login attempt
-        SnowflakeEvents.emit("socket_login_attempt", {
+        // [SnowflakeEventEmit]: socket_login_attempt @ {success:false,token:string,cause:string,client:string}
+        snowflakeEvents.emit("socket_login_attempt", {
             success: true,
             token: token,
             cause: "credential",
@@ -335,13 +350,16 @@ class SnowflakeServer {
      */
     #initSocket(){
 
-        SnowflakeEvents.on("socket_login_attempt", data => {
+        snowflakeEvents.on("socket_login_attempt", data => {
 
             // If client IP is set
             if(typeof data.client === "string"){
 
                 // Deconstruct the data
                 const { success, token, cause, client, origin, attempts } = data;
+
+                // Fetch the access token from application configuration
+                const authentication = Snowflake.authenticateToken(token);
 
                 // Failed login attempt
                 if(!success){
@@ -371,7 +389,7 @@ class SnowflakeServer {
 
                 let log = null;
                 if(cause === "credential"){
-                    log = `[${Snowflake.logger.getTime()}] ${success ? "Successful login to websocket" : "Websocket login failed"}, Token: ${token || "(empty)"}, IP: ${client || "N/A"}`;
+                    log = `[${Snowflake.logger.getTime()}] ${success ? "Successful login to websocket" : "Websocket login failed"}, Token: ${authentication ? authentication.alias : token}, IP: ${client || "N/A"}`;
                 }
                 else if(cause === "origin" && !success){
                     log = `[${Snowflake.logger.getTime()}] Websocket login failed, cause: origin '${origin}' is not acceptable.`;
@@ -419,8 +437,6 @@ class SnowflakeServer {
 
         try{
 
-            // TODO: Cleanup this shit, add it to another method or function with better permission management
-
             if(message.type === "utf8") {
 
                 const json = JSON.parse(message.utf8Data);
@@ -431,370 +447,44 @@ class SnowflakeServer {
 
                 if(!accessDenied) {
 
-                    if (endpoint === "ping") {
-                        this.sendSuccessResponse(connection, requestId, {
-                            pinged: Date.now()
-                        });
-                        return;
-                    }
-                    else if (endpoint === "dbStats") {
-                        if(access.hasAccess("db_stats")){
+                    const apiHandler = new SnowflakeApi();
 
-                            const parts = typeof data === "object" ? (data?.parts || []) : [];
-                            let collection = {};
+                    apiHandler.call(json, access).then(resp => {
 
-                            if(parts.includes("memory_monitor"))
-                                collection["memory_monitor"] = Snowflake.core.monitorEnabled;
+                        const { success, response, statusCode } = resp;
 
-                            if(parts.includes("usage_percent"))
-                                collection["usage_percent"] = Snowflake.core.usedMemoryPercent;
+                        if(statusCode === SnowflakeApi.STATUS_CODE_ACCESS_DENIED){
 
-                            if(parts.includes("usage_bytes"))
-                                collection["usage_bytes"] = Snowflake.core.usedMemory;
-
-                            if(parts.includes("usage_formatted"))
-                                collection["usage_formatted"] = Snowflake.formatBytes(Snowflake.core.usedMemory, Snowflake.core.mbMode).replace(".00", "");
-
-                            if(parts.includes("max_db_size"))
-                                collection["max_db_size"] = Snowflake.core.maxMemory;
-
-                            if(parts.includes("max_db_size_formatted"))
-                                collection["max_db_size_formatted"] = Snowflake.formatBytes(Snowflake.core.maxMemory, Snowflake.core.mbMode).replace(".00", "");
-
-                            if(parts.includes("is_encrypted"))
-                                collection["is_encrypted"] = Snowflake.core.dbEncrypt;
-
-                            const memoryUsage = process.memoryUsage();
-
-                            if(parts.includes("total_heap"))
-                                collection["total_heap"] = memoryUsage.heapTotal;
-
-                            if(parts.includes("total_heap_formatted"))
-                                collection["total_heap_formatted"] = Snowflake.formatBytes(memoryUsage.heapTotal, Snowflake.core.mbMode);
-
-                            if(parts.includes("used_heap"))
-                                collection["used_heap"] = memoryUsage.heapUsed;
-
-                            if(parts.includes("used_heap_formatted"))
-                                collection["used_heap_formatted"] = Snowflake.formatBytes(memoryUsage.heapUsed, Snowflake.core.mbMode);
-
-                            if(parts.includes("meids_count"))
-                                collection["meids_count"] = Snowflake.core.meidsCount;
-
-                            if(parts.includes("entries_count"))
-                                collection["entries_count"] = Snowflake.core.getEntriesCount();
-
-                            if(parts.includes("stats")) {
-                                collection["stats"] = {
-                                    persistentStatus: Snowflake.core.isUnsaved === null ? "no_change" : Snowflake.core.isUnsaved ? "unsaved" : "saved",
-                                    lastPersistent: Snowflake.core.lastPersistent,
-                                    lastReload: Snowflake.core.lastReload
-                                }
-                            }
-
-                            this.sendSuccessResponse(connection, requestId, collection);
-                            return;
-
-                        }
-                        else{
-                            accessDenied = true;
-                        }
-                    }
-                    else if(endpoint === "dataTypeAnalyze"){
-
-                        if(access.hasAccess("db_stats")) {
-
-                            const analyzed = {};
-
-                            Snowflake.core.analyzeValues((key, data) => {
-                                const { value } = data;
-                                let type = Snowflake.typeof(value);
-                                if (typeof analyzed[type] !== "number")
-                                    analyzed[type] = 0;
-                                analyzed[type]++;
+                            // The client doesn't have enough permission for this endpoint
+                            return this.sendErrorResponse(connection, requestId, {
+                                msgId: "forbidden",
+                                msg: "Access denied"
                             });
 
-                            this.sendSuccessResponse(connection, requestId, {
-                                analyzed
-                            });
-
-                            return;
-
-                        }
-                        else{
-                            accessDenied = true;
                         }
 
-                    }
-                    else if(endpoint === "benchmark"){
+                        return this.sendResponse(connection, requestId, response, success);
 
-                        if(access.hasAccess("db_stats")) {
-
-                            const benchmark = {};
-
-                            const { tests } = data;
-
-                            if(!Array.isArray(tests)){
-                                this.sendErrorResponse(connection, requestId, { msgId: "bad_request", msg: "Failed to handle your request" });
-                                return;
-                            }
-
-                            if(tests.includes("entries")){
-
-                                // Create empty list for test results
-                                benchmark["entries_write"] = [];
-                                benchmark["entries_read"] = [];
-                                benchmark["entries_delete"] = [];
-
-                                // Test for set/get/remove operations
-                                for(let entriesCount of [1, 10, 100, 1000]){
-
-                                    // ID for timing
-                                    const id = `${requestId}_${entriesCount}`;
-
-                                    // Set
-                                    Snowflake.logger.timeStart(id);
-                                    for(let i = 0; i < entriesCount; i++){
-                                        Snowflake.core.setUnsafe(id + `_${i}`, i);
-                                    }
-                                    let end = Snowflake.logger.timeEnd(id);
-                                    if(end){
-                                        benchmark["entries_write"].push({
-                                            entries: entriesCount,
-                                            time: Number(end).toFixed(4)
-                                        });
-                                    }
-
-                                    // Get
-                                    Snowflake.logger.timeStart(id);
-                                    for(let i = 0; i < entriesCount; i++){
-                                        Snowflake.core.get(id + `_${i}`);
-                                    }
-                                    end = Snowflake.logger.timeEnd(id);
-                                    if(end){
-                                        benchmark["entries_read"].push({
-                                            entries: entriesCount,
-                                            time: Number(end).toFixed(4)
-                                        });
-                                    }
-
-                                    // Remove
-                                    Snowflake.logger.timeStart(id);
-                                    for(let i = 0; i < entriesCount; i++){
-                                        Snowflake.core.remove(id + `_${i}`, false);
-                                    }
-                                    end = Snowflake.logger.timeEnd(id);
-                                    if(end){
-                                        benchmark["entries_delete"].push({
-                                            entries: entriesCount,
-                                            time: Number(end).toFixed(4)
-                                        });
-                                    }
-                                }
-
-                            }
-
-                            this.sendSuccessResponse(connection, requestId, {
-                                benchmark
-                            });
-
-                            return;
-
-                        }
-                        else{
-                            accessDenied = true;
-                        }
-
-                    }
-                    else if(endpoint === "persistent"){
-
-                        if(Snowflake.core.lastPersistent + 10 * 1000 > Date.now()){
-                            this.sendErrorResponse(connection, requestId, {});
-                            return;
-                        }
-
-                        (async () => {
-                            const startTime = performance.now();
-                            await Snowflake.core.persistent();
-                            const endedIn = (performance.now() - startTime).toFixed(2);
-                            this.sendSuccessResponse(connection, requestId, {
-                                finished: endedIn
-                            })
-                        })()
-
-                        return;
-
-                    }
-                    else if(endpoint === "reload"){
-
-                        if(Snowflake.core.lastReload > 0 && Snowflake.core.lastReload + 10 * 1000 > Date.now()){
-                            this.sendErrorResponse(connection, requestId, {});
-                            return;
-                        }
-
-                        const startTime = performance.now();
-
-                        Snowflake.core.reloadDatabase(1);
-
-                        const endedIn = (performance.now() - startTime).toFixed(2);
-
-                        this.sendSuccessResponse(connection, requestId, {
-                            finished: endedIn
-                        })
-
-                        return;
-
-                    }
-                    else if(endpoint === "read"){
-
-                        if(access.hasAccess("db_read")) {
-
-                            let perPage = Snowflake.rangeNumber(data?.perPage, 1, 100, 10);
-                            let currentPage = Snowflake.rangeNumber(data?.currentPage, 0, null, 0);
-
-                            const posStart = currentPage * perPage,
-                                posEnd = posStart + perPage;
-
-                            const list = Snowflake.core.analyzeValues((keyHash, data, index) => {
-
-                                const key = Snowflake.core.getKeyFromHash(keyHash);
-
-                                if (key) {
-
-                                    const { value, index } = data;
-                                    const size = typeof data.bytes === "number"
-                                                 ? data.bytes
-                                                 : (Snowflake.roughSizeOf(value) + 36); // The size of the address bits (4 bytes) and the hash (32 bytes)
-
-                                    return {
-                                        key,
-                                        keyHash,
-                                        size,
-                                        index: index + 1,
-                                        value: SnowflakeAol.stringify(value),
-                                        type: Snowflake.typeof(value),
-                                        location: index,
-                                        totalSize: size + Snowflake.roughSizeOf(key) + 36, // The size of the address bits (4 bytes) and the hash (32 bytes)
-                                    }
-
-                                }
-
-                            }, posStart, posEnd);
-
-                            this.sendSuccessResponse(connection, requestId, {
-                                list,
-                                entriesCount: Snowflake.core.getEntriesCount()
-                            });
-
-                            return;
-
-                        }
-                        else{
-                            accessDenied = true;
-                        }
-                    }
-                    else if(endpoint === "set"){
-
-                        if(access.hasAccess("db_write")){
-
-                            let { key, value } = data;
-                            const stringified = typeof data.stringified !== "undefined" && Boolean(data.stringified);
-
-                            if(stringified)
-                                value = SnowflakeAol.parse(value);
-
-                            if(typeof key === "string" && typeof value !== "undefined"){
-
-                                // Will be sanitized
-                                const state = Snowflake.core.set(key, value);
-                                if(state > 0){
-                                    this.sendSuccessResponse(connection, requestId, { state });
-                                    return;
-                                }
-
-                            }
-
-                        }
-                        else{
-                            accessDenied = true;
-                        }
-
-                    }
-                    else if(endpoint === "get"){
-
-                        if(access.hasAccess("db_read")){
-
-                            const key = data.key;
-
-                            if(typeof key === "string"){
-
-                                let value = Snowflake.core.get(key, Snowflake.DUMMY.UNDEF);
-
-                                if (value === Snowflake.DUMMY.UNDEF) {
-                                    this.sendErrorResponse(connection, requestId, {
-                                        msgId: "not_found",
-                                        msg: "The given key doesn't exist"
-                                    });
-                                    return;
-                                }
-
-                                this.sendSuccessResponse(connection, requestId, {
-                                    value,
-                                    type: Snowflake.typeof(value)
-                                });
-                                return;
-
-                            }
-
-                        }
-                        else{
-                            accessDenied = true;
-                        }
-
-                    }
-                    else if(endpoint === "remove"){
-
-                        if(access.hasAccess("db_write")){
-
-                            const key = data.key;
-
-                            if(typeof key === "string"){
-                                if(Snowflake.core.remove(key)){
-                                    this.sendSuccessResponse(connection, requestId);
-                                    return;
-                                }
-                            }
-
-                        }
-                        else{
-                            accessDenied = true;
-                        }
-
-                    }
+                    });
 
                 }
 
-                if(accessDenied){
+                else {
 
-                    // Do not handle the request of doesn't have enough permission
-                    this.sendErrorResponse(connection, requestId, {
+                    // Do not handle the request if the client doesn't have enough permission
+                    return this.sendErrorResponse(connection, requestId, {
                         msgId: "forbidden",
                         msg: "Access denied"
                     });
 
-                    return;
-
                 }
 
-                this.sendErrorResponse(connection, requestId, {
-                    msgId: "bad_request",
-                    msg: "Failed to handle your request"
-                });
+                return;
 
             }
 
         } catch (e){
-            if(appConfig.is_development)
+            if(Snowflake.config.is_development)
                  console.log("Client message was invalid or not a JSON string:", e);
         }
 
@@ -815,6 +505,9 @@ class SnowflakeServer {
 
             this.app.get("/", this.handleAll);
 
+            // [SnowflakeEventEmit]: http_app_init @ Express
+            snowflakeEvents.emit("http_app_init", this.app);
+
             this.app.get("*", this.handle404);
 
         }
@@ -828,9 +521,11 @@ class SnowflakeServer {
      * @since 1.0.0
      */
     #startCLI(cli_port){
-        if(this.#cli !== null)
+        if(this.#cli) {
+            Snowflake.logger.warning("Couldn't restart the CLI (it's already running)");
             return false;
-        this.#cli = SnowflakeCLI.start(cli_port);
+        }
+        this.#cli = snowflakeCLI.start(cli_port);
         return true;
     }
 
@@ -846,9 +541,9 @@ class SnowflakeServer {
         this.#maxLoginAttempt = Math.max(Snowflake.yaml.getInt("server.max_cli_login_attempt"), 0);
         this.#loginAttemptCooldown = Math.max(Snowflake.yaml.getInt("server.cli_cooldown"), 5);
 
-        // Prevent from initializing again
+        // Prevent from running the initialization again, just updating the configs
         if(this.#started){
-            Snowflake.logger.info("Server already started, no need to restart.");
+            Snowflake.logger.info("Server already started, no need to restart.", false, "server");
             return this;
         }
 
@@ -858,9 +553,9 @@ class SnowflakeServer {
 
         // Terminate the process if the port hasn't been given
         if(!port)
-            Snowflake.logger.assert("You haven't assigned any port in configuration file or the port is invalid.");
+            Snowflake.logger.assert("You haven't assigned any port in configuration file or the port is invalid.", 1, false, "_server");
 
-        Snowflake.logger.log("%cyan%[SERVER] Initializing HTTP server and websocket...");
+        Snowflake.logger.log("%cyan%[SERVER] Initializing HTTP server and websocket...", null, "server");
 
         // Make a new HTTP server
         const httpServer = http.createServer(app);
@@ -870,24 +565,40 @@ class SnowflakeServer {
             autoAcceptConnections: false
         });
 
-        if(typeof httpServer !== "object" || httpServer.constructor.name !== "Server") {
-            Snowflake.logger.assert("An error has occurred while trying to start the HTTP server, the 'httpServer' " +
-                "object is not an instance of 'Server' class.");
-        }
+        /*if(typeof httpServer !== "object" || httpServer.constructor.name !== "Server") {
+            Snowflake.logger.assert("An error has occurred while trying to start the HTTP server, 'httpServer' " +
+                "object is not an instance of 'Server'.", 1, false, "_server");
+        }*/
 
         httpServer.on("error", (e) => {
-            Snowflake.logger.assert(e.toString(), 1, "server");
+            Snowflake.logger.assert(e.toString(), 1, "_server");
         });
 
         httpServer.listen(port, () => {
-            let {address, family} = httpServer.address();
+
+            let {address} = httpServer.address();
+
             if(address === "::")
                 address = "0.0.0.0";
-            Snowflake.logger.logln(`%cyan%[SERVER] Webserver is available on ${address}:${port}${family ? `, IP family: ${family}.` : ""}`);
-            Snowflake.logger.logln(`%cyan%[GUI] GUI is available on %underline%127.0.0.1:${port}/gui%no_underline%`);
-            SnowflakeEvents.emit("server_start", httpServer);
+
+            Snowflake.logger.log(`%cyan%[SERVER] Webserver is available on ${address}:${port}`, null, "server");
+            Snowflake.logger.log(`%cyan%[GUI] GUI is available on %underline%http://127.0.0.1:${port}/gui%no_underline%`, null, "server");
+
+            // [SnowflakeEventEmit]: server_start @ Server
+            snowflakeEvents.emit("server_start", httpServer);
 
         });
+
+        httpServer.on("close", () => {
+
+            Snowflake.logger.log("%orange%[SERVER]%reset% HTTP server stopped");
+
+            // [SnowflakeEventEmit]: server_stop
+            snowflakeEvents.emit("server_stop");
+
+        });
+
+        this.#http = httpServer;
 
         this.#initApp();
 
@@ -895,12 +606,51 @@ class SnowflakeServer {
 
         this.#started = true;
 
-        const cli_port = Snowflake.yaml.getInt("server.cli_port");
+        const cliPort = Snowflake.yaml.getInt("server.cli_port");
 
-        if(cli_port)
-            SnowflakeEvents.on("core_after_start", () => this.#startCLI(cli_port));
+        if(cliPort)
+            snowflakeEvents.on("after_core_start", () => this.#startCLI(cliPort));
 
         return this;
+
+    }
+
+    stop() {
+        return this.stopHttpServer();
+    }
+
+    stopHttpServer(){
+
+        return new Promise((resolve, reject) => {
+
+            const timeout = setTimeout(() => reject("Could not stop the HTTP server (timed-out)"), 15000);
+
+            this.#cli.terminate().then(() => {
+
+                Snowflake.logger.log("%orange%[SERVER]%reset% TCP socket terminated");
+
+                this.#socket.shutDown();
+
+                Snowflake.logger.log("%orange%[SERVER]%reset% WebSocket terminated");
+
+                this.#http.close(err => {
+
+                    clearTimeout(timeout);
+
+                    if(err) {
+                        reject(err);
+                    }
+                    else {
+                        this.#started = false;
+                        this.#cli = null;
+                        resolve();
+                    }
+
+                });
+
+            });
+
+        });
 
     }
 
@@ -910,14 +660,12 @@ class SnowflakeServer {
      * @param {string} requestId
      * @param {object} data
      * @param {boolean} success
-     * @return SnowflakeServer
      * @since 1.0.0
      */
     sendResponse(connection, requestId, data    , success){
         connection.send(JSON.stringify({
             data, requestId, success
         }));
-        return this;
     }
 
     /**
@@ -925,11 +673,10 @@ class SnowflakeServer {
      * @param {WebSocketConnection} connection
      * @param {string} requestId
      * @param {object} data
-     * @return SnowflakeServer
      * @since 1.0.0
      */
     sendSuccessResponse(connection, requestId, data = {}){
-        return this.sendResponse(connection, requestId, data, true);
+        this.sendResponse(connection, requestId, data, true);
     }
 
     /**
@@ -937,11 +684,10 @@ class SnowflakeServer {
      * @param {WebSocketConnection} connection
      * @param {string} requestId
      * @param {object} data
-     * @return SnowflakeServer
      * @since 1.0.0
      */
     sendErrorResponse(connection, requestId, data = {}){
-        return this.sendResponse(connection, requestId, data, false);
+        this.sendResponse(connection, requestId, data, false);
     }
 
     /**
