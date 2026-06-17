@@ -75,7 +75,7 @@ npm install
 ### 3. Run the program
 After installing required dependencies, run the project using the following command:<br/>
 ```bash
-node project1.js
+node index.js
 ```
 
 Now you can access the database using TCP shell or use shared method to use it inside your project.
