@@ -1,6 +1,8 @@
-const { startSnowflake} = require("./module");
+/*
+ * This file runs a minimal SnowflakeDB setup with default configuration.
+ * If you intend to run it in your own project, use npm package or module.js file.
+ */
 
-// TODO: Add events in different locations of app
-// TODO: Disallow using the same database files from two different processes
+const { startSnowflake} = require("./module");
 
 startSnowflake("configs.yaml");

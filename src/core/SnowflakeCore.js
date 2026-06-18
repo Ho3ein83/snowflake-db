@@ -1545,7 +1545,7 @@ class SnowflakeCore {
      * Set a value by its key
      * @param {string} key - The key of entry you want to change
      * @param {SnowflakeEntryType} value - The value to set, can be a `number`, `string`, `boolean`, `array`, `object`
-     *     or a `buffer`
+     * or a `buffer`
      * @return {number} - Returns `0` on failure, `1` if the value was updated, or `2` if a new entry was inserted,
      * `-1` when memory limit exceeded or `-2` when the new value is the same as it is now (no change).
      * @since 1.0.0

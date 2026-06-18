@@ -2,6 +2,7 @@ const fs = require("fs");
 const Snowflake = require("./Snowflake");
 const crypto = require("crypto");
 const snowflakeEvents = require("./SnowflakeEvents");
+const path = require("node:path");
 
 const HEADER_LENGTH = 32;
 const KEY_LENGTH = 32;
@@ -111,6 +112,10 @@ class SnowflakeCypher {
         const keyString = Snowflake.generate(KEY_LENGTH, "all");
         const keyBuffer = Buffer.from(keyString, "utf8");
         keyBuffer.copy(buffer, HEADER_LENGTH);
+
+        // Create directories recursively
+        const dir = path.dirname(filePath);
+        fs.mkdirSync(dir, { recursive: true });
 
         // Write buffer to file
         fs.writeFileSync(filePath, buffer);

@@ -1,19 +1,32 @@
 {
   "name": "snowflake-database",
-  "version": "1.0.0",
-  "main": "index.js",
-  "keywords": ["In-memory", "database", "cache", "caching", "snowflake"],
+  "version": "1.0.2",
+  "main": "module.js",
+  "files": [
+    "src",
+    "app.json",
+    "configs.default.yaml",
+    "module.js"
+  ],
+  "keywords": [
+    "In-memory",
+    "database",
+    "cache",
+    "caching",
+    "snowflake"
+  ],
   "author": "Amatris",
-  "license": "GPL-2.0-or-later",
-  "description": "Advanced in-memory database system",
+  "license": "GPL-3.0-or-later",
+  "description": "Advanced, easy-to-use and highly customizable in-memory database",
   "dependencies": {
     "express": "^4.21.2",
-    "yaml": "latest",
-    "websocket": "^1.0.35",
     "msgpack-lite": "^0.1.26",
-    "uuid": "latest"
+    "uuid": "latest",
+    "websocket": "^1.0.35",
+    "yaml": "latest"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1"
+    "@types/node": "^25.9.1",
+    "tinybench": "^6.0.2"
   }
 }

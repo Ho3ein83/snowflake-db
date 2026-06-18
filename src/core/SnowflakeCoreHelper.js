@@ -47,6 +47,18 @@ Examples: get key_1
 
                 if (args.length <= 1) {
                     const key = this.sanitizeKey(args[0]);
+
+                    // Just to test bulk get, you can ignore it
+                    /*if(args[0].toString().indexOf("#") >= 0){
+                        const count = parseInt(args[0].split("#")[1]);
+                        if(!isNaN(count)){
+                            for(let i = 1; i <= count; i++){
+                                const v = this.get(args[0].replace(`#${count}`, i));
+                                void(v);
+                            }
+                        }
+                    }*/
+
                     let value = this.get(key, Snowflake.DUMMY.UNDEF);
                     if (value === Snowflake.DUMMY.UNDEF) {
                         return ["key doesn't exist", null, 6];
@@ -149,6 +161,20 @@ Examples: set key1 value1
                         const key = args[i];
                         const value = args[i + 1];
                         if (value !== undefined) {
+
+                            // Just to test bulk set, you can ignore it
+                            /*if(key.toString().indexOf("#") >= 0){
+                                const count = parseInt(key.split("#")[1]);
+                                if(!isNaN(count)){
+                                    for(let i = 1; i <= count; i++){
+                                        setItem(key.replaceAll(`#${count}`, i), String(value).replace("$", i.toString()));
+                                    }
+                                }
+                            }
+                            else{
+                                setItem(key, String(value).charAt(0) === "~" ? SnowflakeAol.parse(value.substring(1)) : value);
+                            }*/
+
                             setItem(key, String(value).charAt(0) === "~" ? SnowflakeAol.parse(value.substring(1)) : value);
                         }
                     }
@@ -212,6 +238,7 @@ Usage: delete [KEYS]
 
 Examples: delete key1
           remove key1
+          rm key1
           delete key1 key2
           delete "Key 1" "Key 2"`,
             usage: "delete [KEYS]",
@@ -222,12 +249,22 @@ Examples: delete key1
             exec: params => {
                 const { args, options } = params;
                 if (args.length <= 1) {
+
+                    // Just to test bulk remove, you can ignore it
+                    /*if(args[0].indexOf("#") >= 0){
+                        const count = parseInt(args[0].split("#")[1]);
+                        if(!isNaN(count)){
+                            for(let i = 1; i <= count; i++)
+                                this.remove(args[0].replace(`#${count}`, i));
+                        }
+                    }*/
+
                     const success = this.remove(args[0]);
                     return [success ? "1 item deleted" : "Deletion failed", success, success ? 0 : 5];
                 }
                 let removed = 0, failed = 0;
                 for(let item of args){
-                    if(this.remove(item))
+                    if (this.remove(item))
                         removed++;
                     else
                         failed++;
@@ -793,7 +830,8 @@ Examples: path`,
 
     /**
      * Load database files and restore backup files (if needed)
-     * @param {boolean|number} restoreBackups - Whether to restore backup files (true) or skip them (false) or remove them (1).
+     * @param {boolean|number} restoreBackups - Whether to restore backup files (true) or skip them (false) or remove
+     *     them (1).
      * @since 1.0.0
      */
     loadDatabase(restoreBackups = true) {

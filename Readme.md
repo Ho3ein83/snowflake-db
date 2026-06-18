@@ -1,4 +1,4 @@
-![Beta](https://img.shields.io/badge/Pre_Release-pink)
+![Version](https://img.shields.io/badge/Version-1.0.2-pink)
 ![SnowflakeDB](https://img.shields.io/badge/Snowflake-DB-purple)
 ![Project Status: In progress](https://img.shields.io/badge/Status-In_progress-orange)
 
@@ -7,17 +7,20 @@
 <!-- TOC -->
 * [SnowflakeDB - Introduction](#snowflakedb---introduction)
   * [How to install?](#how-to-install)
-    * [1. Open the project](#1-open-the-project)
-    * [2. Install dependencies](#2-install-dependencies)
-    * [3. Run the program](#3-run-the-program)
-    * [Change the configuration (optional):](#change-the-configuration-optional)
-    * [Use the program as module](#use-the-program-as-module)
+    * [Install from NPM (recommended)](#install-from-npm-recommended)
+      * [1. Run install command first](#1-run-install-command-first)
+      * [2. import and run](#2-import-and-run)
+    * [Install from GitHub](#install-from-github)
+      * [1. Clone this repository](#1-clone-this-repository)
+      * [2. Install dependencies](#2-install-dependencies)
+      * [3. Run it](#3-run-it)
+    * [Examples](#examples)
+      * [Set / Get / Remove](#set--get--remove)
   * [Benchmark](#benchmark)
-    * [Data manipulation (with memory monitor and encryption on)](#data-manipulation-with-memory-monitor-and-encryption-on)
+    * [Data set (with memory monitor and encryption on)](#data-set-with-memory-monitor-and-encryption-on)
     * [Data read (with memory monitor and encryption on)](#data-read-with-memory-monitor-and-encryption-on)
+    * [Data deletion (with memory monitor and encryption on)](#data-deletion-with-memory-monitor-and-encryption-on)
     * [Data sanitization](#data-sanitization)
-    * [Database performance (large data - encryption off)](#database-performance-large-data---encryption-off)
-    * [Database performance (small data - encryption off)](#database-performance-small-data---encryption-off)
     * [Database performance (small data - encryption on)](#database-performance-small-data---encryption-on)
     * [Program performance](#program-performance)
   * [How does it work?](#how-does-it-work)
@@ -53,42 +56,55 @@ SnowflakeDB is an advanced in-memory database system inspired by Redis.
 With SnowflakeDB, you can create a database inside your machine's RAM, which improves read and write operations on your application.
 
 ## How to install?
-Currently, this project works as it should, and we expect it to work without any problem, however it can still be better than it is now.
-To install it, follow this instruction:
+You can easily install SnowflakeDB from NPM and import it in your project.
+If you are willing to modify the source you can directly download SnowflakeDB from this GitHub repository.
 
-### 1. Open the project
-Run the following command or download it manually:<br/>
+### Install from NPM (recommended)
+
+#### 1. Run install command first
+```bash
+npm install snowflake-database
+```
+
+#### 2. import and run
+```javascript
+const { startSnowflake } = require("snowflake-database");
+
+startSnowflake("configs.yaml", "app.json");
+```
+
+You can change the name of `configs.yaml` and `app.json` files name or path.
+**Both files will be auto-generated if didn't exist, then you can modify as you need.**
+
+### Install from GitHub
+
+#### 1. Clone this repository
 ```bash
 git clone https://github.com/Ho3ein83/snowflake-db
 ```
-Open the project directory:<br/>
+Open the project directory:
 ```bash
 cd snowflake-db
 ```
 
-### 2. Install dependencies
-To install the project dependencies, run the following command inside `snowflake-db` directory:<br/>
+#### 2. Install dependencies
 ```bash
 npm install
 ```
 
-### 3. Run the program
-After installing required dependencies, run the project using the following command:<br/>
+#### 3. Run it
 ```bash
 node index.js
 ```
+**When using this method, both `configs.yaml` and `app.json` files will be inside your project directory.**
 
-Now you can access the database using TCP shell or use shared method to use it inside your project.
-
-### Change the configuration (optional):
-If you want to customize the application, open `configs.yaml` file and edit it as needed. See the config sections for more details.
-
-### Use the program as module
-if you have another Node.js project, and you want to run SnowflakeDB on top of your project, use this code instead:
+### Examples
+#### Set / Get / Remove
+This is the basic `set`, `get` and `remove` methods:
 ```javascript
-const { Snowflake, startSnowflake} = require("/path/to/snowflake-db/module");
+const { Snowflake, startSnowflake } = require("snowflake-database");
 
-// Call this before using the database (running this at the very top is recommended)
+// Call this before using the database
 // You can also use the absolute path, if just a file name was given,
 // it's going to use current directory.
 // If the given path didn't exist, it'll create a new file with
@@ -101,68 +117,77 @@ Snowflake.core.set("last_name", "Doe");
 Snowflake.core.set("age", 20);
 
 // Get a value (with a default value)
-firstName = Snowflake.core.get("first_name", "No Name");
+const firstName = Snowflake.core.get("first_name", "No Name");
 
 // Delete a value
 Snowflake.core.remove("last_name");
 ```
 
-**Note:** as mentioned before, this project is not finished yet, so for now, you need to save the module locally inside your project.
-In our case, the project was located inside the snowflake-db directory, so the module path was `./module.js`. However, you may need to set an absolute path for it to work correctly.
+You can also bind the methods for easier use:
+```javascript
+const { Snowflake, startSnowflake } = require("snowflake-database");
 
-**Note:** there is no persistent system implemented in beta version, so your data **will be lost** when terminating the program.
+startSnowflake("config.yaml", "app.json");
+
+// Binding the methods with local variables
+// Note: you might lose IDE hints when using method binding
+const set = Snowflake.core.set.bind(Snowflake.core);
+const get = Snowflake.core.get.bind(Snowflake.core);
+const remove = Snowflake.core.remove.bind(Snowflake.core);
+
+// Set / Update some values
+set("first_name", "John");
+set("last_name", "Doe");
+set("age", 20);
+
+// Get a value (with a default value)
+const firstName = get("first_name", "No Name");
+
+// Delete a value
+remove("last_name");
+```
 
 ## Benchmark
 
-This benchmark was done using two methods of database access: the first was a TCP shell, which allows you to manage the database via a TCP connection; the second used shared memory by integrating this project directly into your own.<br/>
-Both were calculated using the same data and measurement methods on the same device.
+This benchmark is measured using my personal laptop (Asus K3605ZF, 12th Gen Intel Core i7 × 20 with a M2 SSD and 40GB of DDR4 RAM) running `SnowflakeDB 1.0.x` with 2 different methods: 
+1. TCP shell: which allows you to manage the database via a TCP connection from terminal using `netcat` command.
+2. Shared memory: which benchmark process is attached to the same process as the database with shared memory using `Snowflake.core.set` / `Snowflake.core.get` / `Snowflake.core.remove` functions. 
 
-### Data manipulation (with memory monitor and encryption on)
-|   Method    | Set (1 entry) | Set (1,000 entries) |  Update  |  Delete  |
-|:-----------:|:-------------:|:-------------------:|:--------:|:--------:|
-|  TCP Shell  |   1.253 ms    |      23.030 ms      | 0.395 ms | 0.588 ms |
-|   Shared    |   0.230 ms    |      20.044 ms      | 0.717 ms | 0.203 ms |
+### Data set (with memory monitor and encryption on)
+|  Method   | Set (1 entry) | Set (1K entries) | Set (100K entries) | Update (1K entries) | Update (100K entries) |
+|:---------:|:-------------:|:----------------:|:------------------:|:-------------------:|:---------------------:|
+| TCP Shell |   2.577 ms    |    14.669 ms     |      1,333 ms      |      16.376 ms      |       999.91 ms       |
+|  Shared   |   0.022 ms    |    11.508 ms     |      1,059 ms      |      5.884 ms       |       846.52 ms       |
 
 ### Data read (with memory monitor and encryption on)
-|   Method    | Get - between 1 entry |      Get - between 2M entries       |
-|:-----------:|:---------------------:|:-----------------------------------:|
-|  TCP Shell  |       0.131 ms        |              0.224 ms               |
-|   Shared    |       0.072 ms        |              0.087 ms               |
+|  Method   | Get (1 entry) | Get (1K entries) | Get (100K entries) |
+|:---------:|:-------------:|:----------------:|:------------------:|
+| TCP Shell |   0.331 ms    |     1.983 ms     |     108.24 ms      |
+|  Shared   |   0.0009 ms   |     0.781 ms     |      92.63 ms      |
+
+### Data deletion (with memory monitor and encryption on)
+|  Method   | Remove (1 entry) | Remove (1K entries) | Remove (100K entries) |
+|:---------:|:----------------:|:-------------------:|:---------------------:|
+| TCP Shell |     0.998 ms     |      11.529 ms      |       1,142 ms        |
+|  Shared   |     0.006 ms     |      5.565 ms       |       696.02 ms       |
 
 ### Data sanitization
 |   Method    | Sanitize (key) | Sanitize (value) |
 |:-----------:|:--------------:|:----------------:|
-|  TCP Shell  |    0.142 ms    |     0.175 ms     |
-|   Shared    |    0.026 ms    |     0.005 ms     |
+|  TCP Shell  |    0.331 ms    |     0.408 ms     |
+|   Shared    |   0.0003 ms    |    0.0002 ms     |
 
-TCP shell commands takes longer time to execute, because there are a few extra steps for TCP connection to allow the execution, such as authenticating and validations.
-
-### Database performance (large data - encryption off)
-|                    Test                     | Execution time |
-|:-------------------------------------------:|:--------------:|
-|    Startup time for empty database (0 B)    |   10.187 ms    |
-|   Startup time for 1,000 entries (138 KB)   |   26.197 ms    |
-|  Startup time for 10,000 entries (1.38 MB)  |   187.554 ms   |
-| Startup time for 1,000,000 entries (138 MB) |    5.677 s     |
-| Startup time for 2,000,000 entries (276 MB) |    11.623 s    |
-
-### Database performance (small data - encryption off)
-|                    Test                     | Execution time |
-|:-------------------------------------------:|:--------------:|
-|    Startup time for empty database (0 B)    | Same as above  |
-|   Startup time for 1,000 entries (45 KB)    |   23.192 ms    |
-|  Startup time for 10,000 entries (458 KB)   |   118.716 ms   |
-| Startup time for 1,000,000 entries (48 MB)  |    5.267 s     |
-| Startup time for 2,000,000 entries (276 MB) |    11.141 s    |
+TCP shell commands takes longer time to execute, because there are a few extra steps for TCP connection to allow the execution, such as authentication, message validation and permission management.
 
 ### Database performance (small data - encryption on)
 |                    Test                    | Execution time |
 |:------------------------------------------:|:--------------:|
-|   Startup time for empty database (0 B)    |   13.331 ms    |
-|   Startup time for 1,000 entries (45 KB)   |   57.056 ms    |
-|  Startup time for 10,000 entries (458 KB)  |   178.260 ms   |
-| Startup time for 1,000,000 entries (48 MB) |    5.425 s     |
-| Startup time for 2,000,000 entries (97 MB) |    11.249 s    |
+|   Startup time for empty database (0 B)    |    6.591 ms    |
+|   Startup time for 1,000 entries (45 KB)   |   32.213 ms    |
+|  Startup time for 10,000 entries (458 KB)  |   159.855 ms   |
+| Startup time for 1,000,000 entries (48 MB) |    14.595 s    |
+
+**Note:** startup time depends on the number of entries, not the database file size.
 
 ### Program performance
 |                    Test                    | Execution time |
@@ -172,7 +197,7 @@ TCP shell commands takes longer time to execute, because there are a few extra s
 |             Parsing a command              |    0.565 ms    |
 |                Entry lookup                |    0.004 ms    |
 
-**Note:** these values are based on the current version and may change on the future releases.
+**Note:** these values are measures with current version and may change on the future releases.
 
 
 ## How does it work?
@@ -208,9 +233,11 @@ TCP shell commands takes longer time to execute, because there are a few extra s
   If you enable the logging option (enabled by default), you can track login attempts, connections, and other activities. It worth mentioning that you can customize logging options, which will be explained later.
 
 ## Why should I use this one?
-There are many in-memory database and cache systems such as Redis, Memcached, and Valkey that you can use. However, in this project, simplicity is considered an important factor; therefore, there aren't many complicated data types or structures.
+There are many in-memory database and cache systems such as Redis, Memcached, and Valkey that you can use. However, in this project, simplicity is considered an important factor.
 
-In addition, you get a lot of customization options, such as memory management, encryption, security features, and authentication levels.
+Other than simplicity, it's lightweight and easy to set up.
+
+In addition, you get a lot of customization options, such as memory management, encryption, security features, and permission management.
 
 ## How to use command line (TCP shell)?
 ### 1. Set up your access keys
@@ -250,7 +277,8 @@ You can also add more than one token with different permissions:
     }
 }
 ```
-**Note:** permissions are not available in pre-release version!<br/>
+**Note:** Read [Permissions.md](/Permissions.md) for more details.
+
 To limit the maximum allowed connections, set the `max_connections` property to a positive number. To allow unlimited connections, leave it set to `-1`.
 
 ---
@@ -264,12 +292,12 @@ or:
 ```bash
 nc host.com 6401
 ```
-<br/>
+
 
 ### 3. Enter your access key
 After opening the connection, enter one of your access keys and press Enter.<br/>
 You have only 5 seconds to enter your access key; otherwise, the connection will be terminated, and you’ll need to reconnect.<br/>
-See `server.cli_authentication_timeout` in `configs.yaml` for configuration.
+See `server.cli_authentication_timeout` in `configs.yaml` to change this behaviour.
 
 ### 4. Done!
 Now you can enter any available command or run `help` to get the list of existing commands with usage.
@@ -308,7 +336,7 @@ The database begins immediately after the header, so the first 32 bytes of data 
 8d 06 90 bf e5 07 7b 8c bf da 75 e9 02 72 65 8a
 9b 82 21 d0 2b 20 90 fc 8c 4d 32 75 25 9e 7e 85
 ```
-The next 4 bytes represent the length of the value, which can be up to 2³² bytes, allowing you to store up to 4 GB of data in each entry. In this case, the data length is only 6 bytes:
+The next 4 bytes represent size of the value, which can be up to 2³² bytes, allowing you to store up to 4 GiB of data in each entry. In this case, the data length is only 6 bytes:
 ```
 00 00 00 06
 ```
@@ -316,7 +344,7 @@ This means the next 6 bytes contain the actual data:
 ```
 76 61 6C 75 65 31
 ```
-Now if you decode that into its actual format, you get the string value of `"value1"` which is the data of that entry.<br/>
+Now if you decode that into its actual format (using `msgpack`), you get the string value of `"value1"` which is the data of that entry.<br/>
 If there are additional entries, they follow this value, and the process repeats.
 
 ### Key files
@@ -360,8 +388,8 @@ If you have your data encrypted, and now you need to disable the encryption, set
 set both `meids.encrypt` and `meids.recover` to `false` and restart the app, now all of your database files will be decrypted.
 
 ### Attributes
-You can use `@echo` and `@json` attributes to set the mode of the current connection. If you’re building a web interface for your database, you should send `@json` attribute immediately after authentication is completed.<br/>
-For CLI don't change the attribute or send `@echo` to change it back to CLI mode.
+You can use `@echo` and `@json` attributes to set the mode of the current connection. If you’re building an application for your database, you should send `@json` attribute immediately after authentication is completed.<br/>
+For CLI don't change the mode or send `@echo` to change it back to CLI mode.
 ```
 ╭ @echo | @json ────────────────────────────────────╮
 │ Enter echo mode (for CLI) or JSON mode (for apps) │
@@ -370,7 +398,7 @@ For CLI don't change the attribute or send `@echo` to change it back to CLI mode
 
 ---
 
-To see how long a command takes to execute, enable the timing attribute by sending `@timing on`. To disable it, send `@timing off`.
+To see how long a command takes to execute, enable set `timing` attribute to `on` by sending `@timing on`. To disable it, send `@timing off`.
 ```
 ╭ @timing on|off ──────────────────────────╮
 │ Toggle execution time measurement state. │
@@ -702,9 +730,9 @@ boolean<T
 - `F` or `f` 👉 ```false```
 
 #### Programming - Backup files encoding / decoding:
-Import the AOL module first:
+Import the AOL object first:
 ```js
-const SnowflakeAol = require("./src/core/SnowflakeAol");
+const SnowflakeAol = require("snowflake-database/src/core/SnowflakeAol");
 ```
 To encode a new set, use `encodeSets` method:
 ```js
